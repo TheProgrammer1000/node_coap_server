@@ -3,7 +3,7 @@ import mysql from "mysql2/promise"; // ← /promise är viktigt!
 const pool = mysql.createPool({
     host: "localhost",
     user: "root",
-    password: "Kalleanka9!",
+    password: process.env.PASSWORD,
     database: "IoT_sensor",
     waitForConnections: true,
     connectionLimit: 10,
