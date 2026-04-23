@@ -14,6 +14,7 @@
     "dependencies": {
         "bl": "^7.0.0",
         "coap": "^1.5.0",
+        "dotenv": "^17.4.2",
         "mysql2": "^3.0.0"
     },
     "devDependencies": {

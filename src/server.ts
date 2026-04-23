@@ -1,8 +1,16 @@
 import { createServer, request, registerFormat, registerOption } from "coap";
 import pool from "./db_connection.js";
 
+const dotenv = require('dotenv');
+dotenv.config();
+
 const server = createServer((req, res) => {
-    if (req.url == "/sensor_data/gps" && req.method == "POST") {
+    
+    if(req.method == "GET") {
+        res.code = "2.01";
+        return res.end("Hello world!");
+    }
+    else if (req.url == "/sensor_data/gps" && req.method == "POST") {
         let body = "";
         req.on("data", (chunk) => {
             body = chunk.toString(); // Keep collecting...
@@ -62,6 +70,6 @@ const server = createServer((req, res) => {
     }
 });
 
-server.listen(5683, () => {
+server.listen(5683, process.env.HOST_NAME,() => {
     console.log("CoAP server running on port 5683");
 });
