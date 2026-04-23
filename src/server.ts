@@ -1,7 +1,7 @@
 import { createServer, request, registerFormat, registerOption } from "coap";
 import pool from "./db_connection.js";
 
-const dotenv = require('dotenv');
+import dotenv from 'dotenv'
 dotenv.config();
 
 const server = createServer((req, res) => {
