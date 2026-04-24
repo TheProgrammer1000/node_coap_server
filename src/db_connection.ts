@@ -1,5 +1,10 @@
 import mysql from "mysql2/promise"; // ← /promise är viktigt!
 
+import dotenv from "dotenv";
+dotenv.config();
+
+
+
 const pool = mysql.createPool({
     host: "localhost",
     user: "root",
