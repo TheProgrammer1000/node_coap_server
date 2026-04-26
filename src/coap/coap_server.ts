@@ -68,7 +68,7 @@ export function startCoapServer() {
         return res.end("Not found");
     });
 
-    const host = process.env.HOST_NAME ?? "127.0.0.1";
+    const host = process.env.COAP_HOST_NAME ?? "127.0.0.1";
     const port = Number(process.env.COAP_PORT ?? 5683);
 
     server.listen(port, host, () => {

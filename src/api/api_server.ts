@@ -1,12 +1,17 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 import routes from "./routes/index.js";
 
 export function startApiServer() {
     const app = express();
+
     const port = Number(process.env.API_SERVER_PORT || 3000);
+    const host = process.env.API_HOST_NAME || "127.0.0.1";
 
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
@@ -30,11 +35,11 @@ export function startApiServer() {
         res.send("API server is running");
     });
 
-    app.listen(port, () => {
-        console.log(`API server listening on port ${port}`);
-        console.log(`UI: http://localhost:${port}/`);
-        console.log(`Index: http://localhost:${port}/index.html`);
-        console.log(`Health: http://localhost:${port}/health`);
-        console.log(`GNSS API: http://localhost:${port}/api/gnss`);
+    app.listen(port, host, () => {
+        console.log(`API server listening on http://${host}:${port}`);
+        console.log(`UI: http://${host}:${port}/`);
+        console.log(`Index: http://${host}:${port}/index.html`);
+        console.log(`Health: http://${host}:${port}/health`);
+        console.log(`GNSS API: http://${host}:${port}/api/gnss`);
     });
 }
