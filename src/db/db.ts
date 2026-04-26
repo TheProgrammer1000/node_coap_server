@@ -5,7 +5,7 @@ export async function getLastPositions(limit = 10) {
     const safeLimit = Math.min(Math.max(Number(limit), 1), 500);
 
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_last_positions(?)",
+        "CALL get_last_posistions(?);",
         [safeLimit],
     );
 

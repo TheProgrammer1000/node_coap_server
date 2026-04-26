@@ -20,7 +20,7 @@ map.on("click", onMapClick);
 
 async function loadGnssData() {
     try {
-        const response = await fetch("/api/gnss/device/123456");
+        const response = await fetch("/api/gnss/");
 
         if (!response.ok) {
             throw new Error(`API error: ${response.status}`);
