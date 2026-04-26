@@ -1,3 +1,6 @@
+/// <reference types="leaflet" />
+// @ts-check
+
 let map = L.map("map").setView([59.33, 18.06], 13);
 let popup = L.popup();
 
@@ -63,7 +66,7 @@ async function loadGnssData() {
 
             if (acc !== null && !Number.isNaN(acc)) {
                 L.circle([lat, lon], {
-                    radius: acc,
+                    radius: acc * 0.1,
                     color: "red",
                     fillColor: "#f03",
                     fillOpacity: 0.2,
