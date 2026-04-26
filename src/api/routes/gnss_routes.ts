@@ -1,22 +1,24 @@
 import { Router } from "express";
-import { getGnssDataByDeviceId, getGnssData } from "../../db/db.js";
+import { getGnssDataByDeviceId, getLastPositions } from "../../db/db.js";
 
 const router = Router();
 
 router.get("/", async (req, res) => {
     try {
-        const data = await getGnssData();
+        const limit = Number(req.query.limit || 5);
+
+        const data = await getLastPositions(limit);
 
         return res.json({
             success: true,
             data,
         });
     } catch (error) {
-        console.error("Failed to get GNSS data:", error);
+        console.error("Failed to get last positions:", error);
 
         return res.status(500).json({
             success: false,
-            error: "Failed to get GNSS data",
+            error: "Failed to get last positions",
         });
     }
 });
