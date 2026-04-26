@@ -1,6 +1,8 @@
 /// <reference types="leaflet" />
 // @ts-check
 
+let hasCenteredMap = false;
+
 let map = L.map("map").setView([59.33, 18.06], 13);
 let popup = L.popup();
 
@@ -82,4 +84,3 @@ async function loadGnssData() {
 }
 
 loadGnssData();
-setInterval(loadGnssData, 5000);
