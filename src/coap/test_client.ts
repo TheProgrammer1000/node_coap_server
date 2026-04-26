@@ -1,5 +1,8 @@
 import { request } from "coap";
 import type { IncomingMessage } from "coap";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const gnssPayload = JSON.stringify({
     device_ID: 123456,
@@ -10,7 +13,7 @@ const gnssPayload = JSON.stringify({
 });
 
 const req = request({
-    host: "192.168.68.75",
+    host: process.env.HOST_NAME,
     port: 5683,
     pathname: "/sensor_data/gps",
     method: "POST",
@@ -23,6 +26,10 @@ const req = request({
 req.on("response", (res: IncomingMessage) => {
     console.log("Response code: ", res.code);
     res.pipe(process.stdout); // Skriver ut svaret i terminalen
+});
+
+req.on("error", (err) => {
+    console.error("Client error:", err);
 });
 
 req.write(gnssPayload); // Lägg GPS-datan i förfrågan

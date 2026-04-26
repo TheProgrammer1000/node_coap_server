@@ -1,10 +1,13 @@
 import mysql from "mysql2/promise"; // ← /promise är viktigt!
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const pool = mysql.createPool({
-    host: "localhost",
-    user: "root",
+    host: process.env.DB_HOST ?? "localhost",
+    user: process.env.DB_USER ?? "root",
     password: process.env.PASSWORD,
-    database: "IoT_sensor",
+    database: process.env.DB_NAME ?? "IoT_sensor",
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
