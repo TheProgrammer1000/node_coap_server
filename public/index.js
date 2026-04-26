@@ -66,7 +66,7 @@ async function loadGnssData() {
 
             if (acc !== null && !Number.isNaN(acc)) {
                 L.circle([lat, lon], {
-                    radius: acc * 0.1,
+                    radius: Math.min(acc * 0.03, 5),
                     color: "red",
                     fillColor: "#f03",
                     fillOpacity: 0.2,
