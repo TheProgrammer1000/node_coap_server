@@ -1,45 +1,65 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { useAuthStore } from "../store/authStore";
 
-export default function Login() {
+export default function Register() {
+    const [showUsername, setShowUsername] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
 
-    const login = useAuthStore((state) => state.login);
     const navigate = useNavigate();
 
     async function handleSubmit(event) {
         event.preventDefault();
         setError("");
+        setSuccess("");
 
-        if (!username.trim() || !password.trim()) {
-            setError("Fyll i användarnamn och lösenord");
+        if (!showUsername.trim() || !username.trim() || !password.trim()) {
+            setError("Fyll i alla fält");
+            return;
+        }
+
+        if (password.length < 4) {
+            setError("Lösenordet måste vara minst 4 tecken");
             return;
         }
 
         try {
-            const response = await axios.post("/api/auth/login", {
+            await axios.post("/api/auth/register", {
+                show_username: showUsername.trim(),
                 username: username.trim(),
                 password: password,
             });
 
-            login(response.data.user);
+            setSuccess("Konto skapat. Du skickas till login...");
 
-            navigate("/");
+            setTimeout(() => {
+                navigate("/login");
+            }, 1000);
         } catch (error) {
-            console.error("Login failed:", error);
-            setError("Fel användarnamn eller lösenord");
+            console.error("Register failed:", error);
+            setError("Kunde inte skapa konto");
         }
     }
 
     return (
         <main className="login-page">
             <form className="login-card" onSubmit={handleSubmit}>
-                <h1>Logga in</h1>
-                <p>COAP Tracker Dashboard</p>
+                <h1>Registrera</h1>
+                <p>Skapa konto för COAP Tracker Dashboard</p>
+
+                <label>
+                    Visningsnamn
+                    <input
+                        value={showUsername}
+                        onChange={(event) =>
+                            setShowUsername(event.target.value)
+                        }
+                        placeholder="Dennis"
+                    />
+                </label>
 
                 <label>
                     Användarnamn
@@ -61,11 +81,12 @@ export default function Login() {
                 </label>
 
                 {error && <p className="error">{error}</p>}
+                {success && <p className="success">{success}</p>}
 
-                <button type="submit">Logga in</button>
+                <button type="submit">Registrera</button>
 
                 <p className="auth-link">
-                    Inget konto? <Link to="/register">Registrera dig</Link>
+                    Har du redan konto? <Link to="/login">Logga in</Link>
                 </p>
             </form>
         </main>

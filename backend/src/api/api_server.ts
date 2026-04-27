@@ -1,6 +1,4 @@
 import express from "express";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -13,20 +11,7 @@ export function startApiServer() {
     const port = Number(process.env.API_SERVER_PORT || 3000);
     const host = process.env.API_HOST_NAME || "127.0.0.1";
 
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-
-    // api_server.ts ligger i src/api/
-    // public ligger två nivåer upp
-    const publicPath = path.resolve(__dirname, "../../public");
-
-    console.log("Current working directory:", process.cwd());
-    console.log("Serving static files from:", publicPath);
-
     app.use(express.json());
-
-    // Serverar public/index.html, public/index.js, public/index.css
-    app.use(express.static(publicPath));
 
     // REST API routes
     app.use("/api", routes);
@@ -39,7 +24,6 @@ export function startApiServer() {
         console.log(`API server listening on http://${host}:${port}`);
         console.log(`UI: http://${host}:${port}/`);
         console.log(`Index: http://${host}:${port}/index.html`);
-        console.log(`Health: http://${host}:${port}/health`);
         console.log(`GNSS API: http://${host}:${port}/api/gnss`);
     });
 }

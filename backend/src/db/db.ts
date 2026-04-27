@@ -12,6 +12,28 @@ export async function getLastPositions(limit = 10) {
     return result[0];
 }
 
+export async function register_user(
+    show_username: string,
+    username: string,
+    password: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL register_user(?, ?, ?);",
+        [show_username, username, password],
+    );
+
+    return result[0];
+}
+
+export async function login_user(username: string, password: string) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL login_user(?, ?);",
+        [username, password],
+    );
+
+    return result[0];
+}
+
 export async function getGnssDataByDeviceId(deviceId: number, limit = 50) {
     const safeLimit = Math.min(Math.max(Number(limit), 1), 500);
 

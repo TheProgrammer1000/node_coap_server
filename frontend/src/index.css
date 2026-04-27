@@ -126,3 +126,24 @@ nav li a {
         text-align: center;
     }
 }
+
+/* Register och Login*/
+.auth-link {
+    margin-top: 18px;
+}
+
+.auth-link a {
+    color: rgb(37, 37, 128);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.auth-link a:hover {
+    text-decoration: underline;
+}
+
+.success {
+    color: green;
+    font-weight: 700;
+    text-align: center;
+}
