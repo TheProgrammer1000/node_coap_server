@@ -1,0 +1,128 @@
+:root {
+    --text: #6b6375;
+    --text-h: #08060d;
+    --bg: #fff;
+    --border: #e5e4e7;
+    --code-bg: #f4f3ec;
+    --accent: #aa3bff;
+    --accent-bg: rgba(170, 59, 255, 0.1);
+    --accent-border: rgba(170, 59, 255, 0.5);
+    --social-bg: rgba(244, 243, 236, 0.5);
+    --shadow:
+        rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+    --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+    --heading: system-ui, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, Consolas, monospace;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+}
+
+nav {
+    width: 100%;
+    margin-bottom: 2vh;
+    margin-top: 2vh;
+}
+
+nav ul {
+    margin: 0;
+    padding: 0 5vw;
+    display: flex;
+    list-style: none;
+    justify-content: space-between;
+    align-items: center;
+}
+
+nav li {
+    padding: 10px 0;
+    color: black;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+nav li a {
+    color: #000;
+    text-decoration: none;
+}
+
+#header {
+    text-align: center;
+    color: rgb(37, 37, 128);
+}
+
+#map {
+    margin-left: 10vw;
+    height: 35vh;
+    width: 80vw;
+}
+
+.leaflet-map {
+    height: 100%;
+    width: 100%;
+}
+
+#logo {
+    height: 90px;
+    width: 80px;
+}
+
+/*------ about ------------------*/
+
+#about-text-container {
+    text-align: center;
+    padding: 10px;
+}
+
+#about-text-container h2 {
+    font-size: 3rem;
+}
+
+#about-text-container p {
+    font-size: 1.5rem;
+}
+
+/*---------------- product ---------------*/
+
+#product-text-container {
+    text-align: center;
+    margin-left: 5vw;
+    margin-right: 5vw;
+}
+
+#product-text-container h2 {
+    font-size: 2.5rem;
+}
+
+#product-text-container p {
+    font-size: 1.5rem;
+}
+
+.error-message {
+    text-align: center;
+    color: red;
+    font-weight: 700;
+}
+
+@media screen and (min-width: 960px) {
+    #map {
+        height: 65vh;
+        width: 80vw;
+    }
+
+    nav li {
+        font-size: 1.8rem;
+        font-weight: 700;
+    }
+
+    #header {
+        color: rgb(31, 6, 55);
+        text-align: center;
+    }
+}

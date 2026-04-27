@@ -33,7 +33,7 @@ export function startCoapServer() {
 
                     await pool.query(
                         `
-                        INSERT INTO gnss_data (
+                        INSERT INTO device_gnss_data (
                             device_ID,
                             lat,
                             lon,
