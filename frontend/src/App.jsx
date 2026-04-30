@@ -4,6 +4,7 @@ import Product from "./pages/Product";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RegisterDevice from "./pages/RegisterDevice";
 
 export default function App() {
     return (
@@ -25,6 +26,15 @@ export default function App() {
                 element={
                     <ProtectedRoute>
                         <Product />
+                    </ProtectedRoute>
+                }
+            />
+
+            <Route
+                path="/register-device"
+                element={
+                    <ProtectedRoute>
+                        <RegisterDevice />
                     </ProtectedRoute>
                 }
             />

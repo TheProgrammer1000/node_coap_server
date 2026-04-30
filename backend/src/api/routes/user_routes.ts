@@ -62,21 +62,10 @@ router.post("/login", async (req, res) => {
     try {
         const data = await login_user(user.username, user.password);
 
-        const is_valid = data[0].is_valid;
-        console.log("is_valid: ", is_valid);
+        console.log(data);
 
-        if (is_valid == 1) {
-            return res.json({
-                success: true,
-                message: "Successful logging in!",
-                data,
-            });
-        } else {
-            return res.json({
-                success: false,
-                message: "Fail to login!",
-                data,
-            });
+        if (data.length > 0) {
+            res.status(200).json({ success: true, data });
         }
     } catch (error) {
         console.error("Failed to login user:", error);

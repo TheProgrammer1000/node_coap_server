@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
     MapContainer,
     TileLayer,
@@ -11,6 +11,9 @@ import {
 import L from "leaflet";
 import Navbar from "../components/Navbar";
 import axios from "axios";
+import { useAuthStore } from "../store/authStore";
+import { useNavigate } from "react-router-dom";
+
 // Fix för Leaflet marker-icons i Vite/React
 delete L.Icon.Default.prototype._getIconUrl;
 
@@ -62,7 +65,7 @@ function CenterMapOnFirstPoint({ points }) {
             return;
         }
 
-        map.setView([lat, lon], 14);
+        map.setView([lat, lon], 12);
         hasCenteredMap.current = true;
     }, [points, map]);
 
@@ -70,23 +73,31 @@ function CenterMapOnFirstPoint({ points }) {
 }
 
 export default function Home() {
+    const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
+    const logout = useAuthStore((state) => state.logout);
+
+    console.log("show_username: ", user?.show_username);
+    console.log("user_ID: ", user?.user_ID);
+
     const [points, setPoints] = useState([]);
     const [errorMessage, setErrorMessage] = useState("");
 
     async function loadGnssData() {
         try {
-            const response = await axios.get("/api/gnss/");
+            const response = await axios.get(`/api/gnss/user/${user.user_ID}`);
 
             const result = response.data;
+            console.log("response.data", response.data);
 
-            if (!result.success) {
-                console.error("API returned error:", result);
-                setErrorMessage("API returned error");
-                return;
+            if (response.data.success != false) {
+                setPoints(Array.isArray(result.data) ? result.data : []);
+                setErrorMessage("");
+            } else {
+                setErrorMessage(response.data.msg);
             }
 
-            setPoints(result.data);
-            setErrorMessage("");
+            console.log(points.length);
         } catch (error) {
             console.error("Failed to load GNSS data:", error);
             setErrorMessage("Failed to load GNSS data");
@@ -94,78 +105,91 @@ export default function Home() {
     }
 
     useEffect(() => {
+        if (!user) {
+            navigate("/login", { replace: true });
+            return;
+        }
+
         loadGnssData();
-    }, []);
+    }, [user]);
 
     return (
         <>
             <Navbar />
-
+            <h2 style={{ textAlign: "center" }}>Hello {user.show_username}</h2>
             <h1 id="header">GNSS location</h1>
 
             {errorMessage && <p className="error-message">{errorMessage}</p>}
 
-            <div id="map">
-                <MapContainer
-                    center={[59.33, 18.06]}
-                    zoom={13}
-                    className="leaflet-map"
-                >
-                    <TileLayer
-                        maxZoom={19}
-                        attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
+            {points.length <= 0 ? (
+                <p>No GPS data stored</p>
+            ) : (
+                <div id="map">
+                    <MapContainer
+                        center={[59.33, 18.06]}
+                        zoom={13}
+                        className="leaflet-map"
+                    >
+                        <TileLayer
+                            maxZoom={19}
+                            attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
 
-                    <MapClickPopup />
+                        <MapClickPopup />
 
-                    <CenterMapOnFirstPoint points={points} />
+                        <CenterMapOnFirstPoint points={points} />
+                        {points.length > 0 &&
+                            points.map((point, index) => {
+                                const lat = Number(point.lat);
+                                const lon = Number(point.lon);
+                                const acc =
+                                    point.acc === null
+                                        ? null
+                                        : Number(point.acc);
 
-                    {points.map((point, index) => {
-                        const lat = Number(point.lat);
-                        const lon = Number(point.lon);
-                        const acc =
-                            point.acc === null ? null : Number(point.acc);
+                                if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                                    return null;
+                                }
 
-                        if (Number.isNaN(lat) || Number.isNaN(lon)) {
-                            return null;
-                        }
+                                return (
+                                    <div key={`${point.device_ID}-${index}`}>
+                                        <Marker position={[lat, lon]}>
+                                            <Popup>
+                                                <strong>Device:</strong>{" "}
+                                                {point.device_ID}
+                                                <br />
+                                                <strong>Lat:</strong> {lat}
+                                                <br />
+                                                <strong>Lon:</strong> {lon}
+                                                <br />
+                                                <strong>Accuracy:</strong>{" "}
+                                                {point.acc ?? "N/A"}
+                                                <br />
+                                                <strong>Time:</strong>{" "}
+                                                {point.data_timestamp ?? "N/A"}
+                                            </Popup>
+                                        </Marker>
 
-                        return (
-                            <div key={`${point.device_ID}-${index}`}>
-                                <Marker position={[lat, lon]}>
-                                    <Popup>
-                                        <strong>Device:</strong>{" "}
-                                        {point.device_ID}
-                                        <br />
-                                        <strong>Lat:</strong> {lat}
-                                        <br />
-                                        <strong>Lon:</strong> {lon}
-                                        <br />
-                                        <strong>Accuracy:</strong>{" "}
-                                        {point.acc ?? "N/A"}
-                                        <br />
-                                        <strong>Time:</strong>{" "}
-                                        {point.data_timestamp ?? "N/A"}
-                                    </Popup>
-                                </Marker>
+                                        {acc !== null && !Number.isNaN(acc) && (
+                                            <Circle
+                                                center={[lat, lon]}
+                                                radius={Math.min(acc * 0.03, 5)}
+                                                pathOptions={{
+                                                    color: "red",
+                                                    fillColor: "#f03",
+                                                    fillOpacity: 0.2,
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                    </MapContainer>
+                </div>
+            )}
 
-                                {acc !== null && !Number.isNaN(acc) && (
-                                    <Circle
-                                        center={[lat, lon]}
-                                        radius={Math.min(acc * 0.03, 5)}
-                                        pathOptions={{
-                                            color: "red",
-                                            fillColor: "#f03",
-                                            fillOpacity: 0.2,
-                                        }}
-                                    />
-                                )}
-                            </div>
-                        );
-                    })}
-                </MapContainer>
-            </div>
+            <button onClick={logout}>Logout</button>
         </>
     );
 }

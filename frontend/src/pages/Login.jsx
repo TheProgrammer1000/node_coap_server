@@ -21,14 +21,17 @@ export default function Login() {
         }
 
         try {
-            const response = await axios.post("/api/auth/login", {
+            const response = await axios.post("/api/user/login/", {
                 username: username.trim(),
                 password: password,
             });
 
-            login(response.data.user);
-
-            navigate("/");
+            if (response.data.data.length > 0) {
+                login(response.data.data[0]);
+                navigate("/");
+            } else {
+                console.error("response.data.data[0]: ", response.data.data[0]);
+            }
         } catch (error) {
             console.error("Login failed:", error);
             setError("Fel användarnamn eller lösenord");

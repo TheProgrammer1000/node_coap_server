@@ -1,46 +1,33 @@
 import { Router } from "express";
-import { getGnssDataByDeviceId, getLastPositions } from "../../db/db.js";
+import {
+    getGnssDataByDeviceId,
+    getLastPositions,
+    get_gnss_user_device,
+    get_deviceID_by_userID,
+    get_gnss_data_by_user_deviceID,
+} from "../../db/db.js";
 
 const router = Router();
-
-router.get("/", async (req, res) => {
-    try {
-        const limit = Number(req.query.limit || 5);
-
-        const data = await getLastPositions(limit);
-
-        return res.json({
-            success: true,
-            data,
-        });
-    } catch (error) {
-        console.error("Failed to get last positions:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to get last positions",
-        });
-    }
-});
 
 router.get("/device/:deviceId", async (req, res) => {
     try {
         const deviceId = Number(req.params.deviceId);
-        const limit = Number(req.query.limit || 50);
+        console.log("deviceId: ", deviceId);
 
-        if (Number.isNaN(deviceId)) {
-            return res.status(400).json({
+        const device_data = await get_gnss_user_device(deviceId);
+        console.log("device_data: ", device_data);
+
+        if (device_data.length <= 0) {
+            return res.status(200).json({
                 success: false,
-                error: "Invalid device ID",
+                message: "No gnss data to get!",
+            });
+        } else {
+            return res.json({
+                success: true,
+                device_data,
             });
         }
-
-        const data = await getGnssDataByDeviceId(deviceId, limit);
-
-        return res.json({
-            success: true,
-            data,
-        });
     } catch (error) {
         console.error("Failed to get GNSS data by device:", error);
 
@@ -50,5 +37,35 @@ router.get("/device/:deviceId", async (req, res) => {
         });
     }
 });
+
+router.get("/user/:user_ID", async (req, res) => {
+    try {
+        const user_ID = Number(req.params.user_ID);
+
+        const data = await get_deviceID_by_userID(user_ID);
+
+        if (data.length > 0) {
+            console.log(data[0].device_ID);
+
+            const result = await get_gnss_data_by_user_deviceID(
+                data[0].device_ID,
+            );
+
+            console.log(result);
+            res.json({ success: true, data: result });
+        } else {
+            res.json({ success: false, msg: "No userid attach to deviceID" });
+        }
+    } catch (error) {
+        console.error("Failed to get GNSS data by device:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to get GNSS data by device",
+        });
+    }
+});
+
+// CALL get_deviceID_by_userID(userID, deviceID);
 
 export default router;

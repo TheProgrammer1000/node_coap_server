@@ -27,7 +27,7 @@ export default function Register() {
         }
 
         try {
-            await axios.post("/api/auth/register", {
+            await axios.post("/api/user/register/", {
                 show_username: showUsername.trim(),
                 username: username.trim(),
                 password: password,
@@ -37,7 +37,7 @@ export default function Register() {
 
             setTimeout(() => {
                 navigate("/login");
-            }, 1000);
+            }, 2000);
         } catch (error) {
             console.error("Register failed:", error);
             setError("Kunde inte skapa konto");
