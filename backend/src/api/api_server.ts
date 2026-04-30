@@ -13,7 +13,7 @@ export function startApiServer() {
 
     app.use(express.json());
 
-    // REST API routes
+    // REST API routesa
     app.use("/api", routes);
 
     app.get("/health", (req, res) => {
