@@ -1,5 +1,26 @@
-./node_modules
-.node_modules
-node_modules 
-dist
+# Dependencies
+node_modules/
+
+# Builds
+frontend/dist/
+backend/dist/
+dist/
+
+# Env / secrets
 .env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Cache
+.cache/
+.vite/
+coverage/
