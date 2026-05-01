@@ -23,4 +23,4 @@ logs/
 # Cache
 .cache/
 .vite/
-coverage/
+coverage/.flyway.env
