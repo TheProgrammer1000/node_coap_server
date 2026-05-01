@@ -24,3 +24,4 @@ logs/
 .cache/
 .vite/
 coverage/.flyway.env
+.DS_Store
