@@ -2,9 +2,42 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 
+/* WebSocket / Socket.IO */
+import { Server } from "socket.io";
+import { createServer } from "node:http";
+
 dotenv.config();
 
 import routes from "./routes/index.js";
+
+let io: Server | null = null;
+
+export function getSocketServer() {
+    return io;
+}
+
+/* Sending live data through WebSocket */
+export async function sendLiveGnssPosition(
+    userId: string | number,
+    position: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit GNSS live position");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("Position:", position);
+
+    io.to(roomName).emit("gnss:new-position", position);
+
+    console.log(`Emitted gnss:new-position to ${roomName}`);
+}
 
 export function startApiServer() {
     const app = express();
@@ -12,27 +45,76 @@ export function startApiServer() {
     const port = Number(process.env.API_SERVER_PORT || 3000);
     const host = process.env.API_HOST_NAME || "127.0.0.1";
 
-    app.use(express.json());
+    const allowedOrigins = process.env.FRONTEND_ORIGIN
+        ? process.env.FRONTEND_ORIGIN.split(",").map((origin) => origin.trim())
+        : ["http://localhost:5173", "http://127.0.0.1:5173"];
 
     app.use(
         cors({
-            origin: process.env.API_HOST_NAME || "localhost",
+            origin: allowedOrigins,
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allowedHeaders: ["Content-Type", "Authorization"],
         }),
     );
 
-    // REST API routesa
+    app.use(express.json());
+
+    // REST API routes
     app.use("/api", routes);
 
     app.get("/health", (req, res) => {
         res.send("API server is running");
     });
 
-    app.listen(port, host, () => {
+    // Create HTTP server from Express app
+    const httpServer = createServer(app);
+
+    // Attach Socket.IO to same HTTP server
+    io = new Server(httpServer, {
+        cors: {
+            origin: allowedOrigins,
+            methods: ["GET", "POST"],
+            allowedHeaders: ["Content-Type", "Authorization"],
+        },
+    });
+
+    io.on("connection", (socket) => {
+        console.log("Socket connected:", socket.id);
+
+        socket.on("join-user-room", (userId) => {
+            if (!userId) {
+                return;
+            }
+
+            const roomName = `user:${userId}`;
+            socket.join(roomName);
+
+            console.log(`Socket ${socket.id} joined ${roomName}`);
+
+            socket.emit("socket:joined", {
+                room: roomName,
+            });
+        });
+
+        socket.on("leave-user-room", (userId) => {
+            if (!userId) {
+                return;
+            }
+
+            const roomName = `user:${userId}`;
+            socket.leave(roomName);
+
+            console.log(`Socket ${socket.id} left ${roomName}`);
+        });
+
+        socket.on("disconnect", () => {
+            console.log("Socket disconnected:", socket.id);
+        });
+    });
+
+    httpServer.listen(port, host, () => {
         console.log(`API server listening on http://${host}:${port}`);
-        console.log(`UI: http://${host}:${port}/`);
-        console.log(`Index: http://${host}:${port}/index.html`);
         console.log(`GNSS API: http://${host}:${port}/api/gnss`);
+        console.log("Socket.IO server running");
     });
 }

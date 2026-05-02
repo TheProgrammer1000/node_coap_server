@@ -1,5 +1,6 @@
 import { createServer } from "coap";
 import pool from "../db/db_connection.js";
+import { sendLiveGnssPosition } from "../api/api_server.js";
 
 export function startCoapServer() {
     const server = createServer((req, res) => {
@@ -25,7 +26,7 @@ export function startCoapServer() {
 
                     const utcTime = sensorData.data_timestamp
                         ? new Date(sensorData.data_timestamp)
-                        : null;
+                        : new Date();
 
                     console.log("UTC:", utcTime);
                     console.log("Keys mottagna:", Object.keys(sensorData));
@@ -47,9 +48,42 @@ export function startCoapServer() {
                             sensorData.lat,
                             sensorData.lon,
                             sensorData.acc,
-                            utcTime,
+                            utcTime.toISOString(),
                         ],
                     );
+
+                    const [deviceRows]: any = await pool.query(
+                        `
+                        SELECT user_ID
+                        FROM device
+                        WHERE device_ID = ?
+                        LIMIT 1
+                        `,
+                        [sensorData.device_ID],
+                    );
+
+                    const userId = deviceRows?.[0]?.user_ID;
+
+                    const livePosition = {
+                        device_ID: sensorData.device_ID,
+                        lat: sensorData.lat,
+                        lon: sensorData.lon,
+                        acc: sensorData.acc,
+                        data_timestamp: utcTime.toISOString(),
+                    };
+
+                    if (userId) {
+                        await sendLiveGnssPosition(userId, livePosition);
+
+                        console.log(
+                            `Live GNSS position sent to user:${userId}`,
+                            livePosition,
+                        );
+                    } else {
+                        console.warn(
+                            `No user found for device_ID ${sensorData.device_ID}. Position saved but not sent live.`,
+                        );
+                    }
 
                     res.code = "2.04";
                     return res.end("GNSS data saved");

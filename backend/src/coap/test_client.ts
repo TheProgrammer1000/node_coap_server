@@ -4,12 +4,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const stockholmLat = 59.334591;
+const stockholmLon = 18.06324;
+
+const randomOffset = () => (Math.random() - 0.5) * 0.02;
+
 const gnssPayload = JSON.stringify({
     device_ID: 123456,
-    lat: 59.334591,
-    lon: 18.06324,
-    acc: 3.2,
-    data_timestamp: "2026-04-23: 11:26",
+    lat: stockholmLat + randomOffset(),
+    lon: stockholmLon + randomOffset(),
+    acc: Number((Math.random() * 8 + 2).toFixed(2)),
+    data_timestamp: new Date().toISOString(),
 });
 
 const req = request({
@@ -18,19 +23,20 @@ const req = request({
     pathname: "/sensor_data/gps",
     method: "POST",
     options: {
-        "Content-Format": "text/plain",
+        "Content-Format": "application/json",
     },
 });
 
-// Sätter upp en händelselyssnare som väntar på svar från servern
 req.on("response", (res: IncomingMessage) => {
     console.log("Response code: ", res.code);
-    res.pipe(process.stdout); // Skriver ut svaret i terminalen
+    res.pipe(process.stdout);
 });
 
 req.on("error", (err) => {
     console.error("Client error:", err);
 });
 
-req.write(gnssPayload); // Lägg GPS-datan i förfrågan
-req.end(); // Skicka iväg alltihop
+console.log("Sending payload:", gnssPayload);
+
+req.write(gnssPayload);
+req.end();
