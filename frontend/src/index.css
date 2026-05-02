@@ -1,3 +1,87 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+    --radius: 0.625rem;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.129 0.042 264.695);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.129 0.042 264.695);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.129 0.042 264.695);
+    --primary: oklch(0.208 0.042 265.755);
+    --primary-foreground: oklch(0.984 0.003 247.858);
+    --secondary: oklch(0.968 0.007 247.896);
+    --secondary-foreground: oklch(0.208 0.042 265.755);
+    --muted: oklch(0.968 0.007 247.896);
+    --muted-foreground: oklch(0.554 0.046 257.417);
+    --accent: oklch(0.968 0.007 247.896);
+    --accent-foreground: oklch(0.208 0.042 265.755);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.929 0.013 255.508);
+    --input: oklch(0.929 0.013 255.508);
+    --ring: oklch(0.704 0.04 256.788);
+}
+
+.dark {
+    --background: oklch(0.129 0.042 264.695);
+    --foreground: oklch(0.984 0.003 247.858);
+    --card: oklch(0.208 0.042 265.755);
+    --card-foreground: oklch(0.984 0.003 247.858);
+    --popover: oklch(0.208 0.042 265.755);
+    --popover-foreground: oklch(0.984 0.003 247.858);
+    --primary: oklch(0.929 0.013 255.508);
+    --primary-foreground: oklch(0.208 0.042 265.755);
+    --secondary: oklch(0.279 0.041 260.031);
+    --secondary-foreground: oklch(0.984 0.003 247.858);
+    --muted: oklch(0.279 0.041 260.031);
+    --muted-foreground: oklch(0.704 0.04 256.788);
+    --accent: oklch(0.279 0.041 260.031);
+    --accent-foreground: oklch(0.984 0.003 247.858);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.551 0.027 264.364);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
 :root {
     --text: #6b6375;
     --text-h: #08060d;
@@ -25,125 +109,18 @@ body {
     padding: 0;
 }
 
-nav {
-    width: 100%;
-    margin-bottom: 2vh;
-    margin-top: 2vh;
+/*Popup marker*/
+.compact-gnss-popup .leaflet-popup-content {
+    margin: 8px 10px;
+    width: 135px !important;
 }
 
-nav ul {
-    margin: 0;
-    padding: 0 5vw;
-    display: flex;
-    list-style: none;
-    justify-content: space-between;
-    align-items: center;
+.compact-gnss-popup .leaflet-popup-content-wrapper {
+    border-radius: 12px;
 }
 
-nav li {
-    padding: 10px 0;
-    color: black;
-    font-size: 1.2rem;
-    font-weight: 700;
-}
-
-nav li a {
-    color: #000;
-    text-decoration: none;
-}
-
-#header {
-    text-align: center;
-    color: rgb(37, 37, 128);
-}
-
-#map {
-    margin-left: 10vw;
-    height: 35vh;
-    width: 80vw;
-}
-
-.leaflet-map {
-    height: 100%;
-    width: 100%;
-}
-
-#logo {
-    height: 90px;
-    width: 80px;
-}
-
-/*------ about ------------------*/
-
-#about-text-container {
-    text-align: center;
-    padding: 10px;
-}
-
-#about-text-container h2 {
-    font-size: 3rem;
-}
-
-#about-text-container p {
-    font-size: 1.5rem;
-}
-
-/*---------------- product ---------------*/
-
-#product-text-container {
-    text-align: center;
-    margin-left: 5vw;
-    margin-right: 5vw;
-}
-
-#product-text-container h2 {
-    font-size: 2.5rem;
-}
-
-#product-text-container p {
-    font-size: 1.5rem;
-}
-
-.error-message {
-    text-align: center;
-    color: red;
-    font-weight: 700;
-}
-
-@media screen and (min-width: 960px) {
-    #map {
-        height: 65vh;
-        width: 80vw;
-    }
-
-    nav li {
-        font-size: 1.8rem;
-        font-weight: 700;
-    }
-
-    #header {
-        color: rgb(31, 6, 55);
-        text-align: center;
-    }
-}
-
-/* Register och Login*/
-.auth-link {
-    margin-top: 18px;
-}
-
-.auth-link a {
-    color: rgb(37, 37, 128);
-    font-weight: 700;
-    text-decoration: none;
-}
-
-.auth-link a:hover {
-    text-decoration: underline;
-}
-
-.success {
-    color: green;
-    font-weight: 700;
-    text-align: center;
+.compact-gnss-popup .leaflet-popup-close-button {
+    top: 4px;
+    right: 6px;
+    font-size: 16px;
 }

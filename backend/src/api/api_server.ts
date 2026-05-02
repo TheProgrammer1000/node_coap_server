@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
@@ -12,6 +13,14 @@ export function startApiServer() {
     const host = process.env.API_HOST_NAME || "127.0.0.1";
 
     app.use(express.json());
+
+    app.use(
+        cors({
+            origin: process.env.API_HOST_NAME || "localhost",
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization"],
+        }),
+    );
 
     // REST API routesa
     app.use("/api", routes);

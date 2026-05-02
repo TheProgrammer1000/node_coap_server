@@ -12,8 +12,10 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
 
+            <Route path="/" element={<Navigate to="/home" replace />} />
+
             <Route
-                path="/"
+                path="/home"
                 element={
                     <ProtectedRoute>
                         <Home />
@@ -39,7 +41,7 @@ export default function App() {
                 }
             />
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
     );
 }

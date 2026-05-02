@@ -57,7 +57,14 @@ router.post("/register", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-    const user: user_type = req.body;
+    const user = req.body;
+
+    if (!user?.username || !user?.password) {
+        return res.status(400).json({
+            success: false,
+            error: "username and password are required",
+        });
+    }
 
     try {
         const data = await login_user(user.username, user.password);
@@ -65,8 +72,17 @@ router.post("/login", async (req, res) => {
         console.log(data);
 
         if (data.length > 0) {
-            res.status(200).json({ success: true, data });
+            return res.status(200).json({
+                success: true,
+                message: "Login successful",
+                data,
+            });
         }
+
+        return res.status(401).json({
+            success: false,
+            error: "Wrong username or password",
+        });
     } catch (error) {
         console.error("Failed to login user:", error);
 
