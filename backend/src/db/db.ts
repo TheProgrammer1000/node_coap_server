@@ -52,13 +52,19 @@ export async function get_deviceID_by_userID(user_ID: number) {
     return result[0];
 }
 
-export async function get_gnss_data_by_user_deviceID(device_ID: number) {
+export async function add_new_device(
+    user_ID: number,
+    device_name: string,
+    device_serienumber: string,
+) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_gnss_data_by_user_deviceID(?);",
-        [device_ID],
+        "CALL add_new_device(?, ?, ?);",
+        [user_ID, device_name, device_serienumber],
     );
 
-    return result[0];
+    console.log(result);
+
+    return result[0]?.[0];
 }
 
 export async function getGnssDataByDeviceId(deviceId: number, limit = 50) {

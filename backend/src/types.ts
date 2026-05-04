@@ -3,3 +3,9 @@ export interface user_type {
     username: string;
     password: string;
 }
+
+export interface device_param {
+    user_ID: number;
+    device_name: string;
+    device_serienumber: string;
+}

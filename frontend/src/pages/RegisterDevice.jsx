@@ -31,7 +31,7 @@ export default function RegisterDevice() {
     const localUser = storedUser ? JSON.parse(storedUser) : null;
     const user = storeUser || localUser;
 
-    const [deviceId, setDeviceId] = useState("");
+    const [deviceSerienumber, setDeviceSerienumber] = useState("");
     const [deviceName, setDeviceName] = useState("");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
@@ -39,6 +39,7 @@ export default function RegisterDevice() {
 
     async function handleSubmit(event) {
         event.preventDefault();
+
         setError("");
         setSuccess("");
 
@@ -47,28 +48,42 @@ export default function RegisterDevice() {
             return;
         }
 
-        if (!deviceId.trim()) {
-            setError("Fyll i enhets-ID");
+        if (!deviceSerienumber.trim()) {
+            setError("Fyll i serienummer.");
             return;
         }
 
         setIsLoading(true);
 
         try {
-            await axios.post("/api/device/register/", {
-                device_ID: deviceId.trim(),
-                user_ID: user.user_ID,
+            const response = await axios.post("/api/gnss/device/register", {
+                user_ID: Number(user.user_ID),
                 device_name: deviceName.trim() || null,
+                device_serienumber: deviceSerienumber.trim(),
             });
 
-            setSuccess("Enhet registrerad! Omdirigerar till kartan...");
+            console.log("Register device response:", response.data);
 
-            setTimeout(() => {
-                navigate("/home", { replace: true });
-            }, 1200);
+            if (response.data?.success === true) {
+                setSuccess("Enhet registrerad! Omdirigerar till kartan...");
+
+                setTimeout(() => {
+                    navigate("/home", { replace: true });
+                }, 1200);
+
+                return;
+            }
+
+            setError(response.data?.message ?? "Kunde inte registrera enhet.");
         } catch (error) {
             console.error("Register device failed:", error);
-            setError("Kunde inte registrera enhet. Kontrollera enhets-ID.");
+
+            const message =
+                error?.response?.data?.message ||
+                error?.response?.data?.error ||
+                "Kunde inte registrera enhet. Kontrollera serienumret.";
+
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -89,8 +104,9 @@ export default function RegisterDevice() {
                             <CardTitle className="text-3xl">
                                 Registrera enhet
                             </CardTitle>
+
                             <CardDescription className="text-base text-slate-600 dark:text-slate-400">
-                                Ange enhets-ID och ett valfritt namn.
+                                Ange serienummer och ett valfritt namn.
                             </CardDescription>
                         </div>
                     </CardHeader>
@@ -98,15 +114,18 @@ export default function RegisterDevice() {
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="space-y-2">
-                                <Label htmlFor="deviceId">Enhets-ID</Label>
+                                <Label htmlFor="deviceSerienumber">
+                                    Serienummer
+                                </Label>
+
                                 <Input
-                                    id="deviceId"
-                                    value={deviceId}
-                                    onChange={(e) =>
-                                        setDeviceId(e.target.value)
+                                    id="deviceSerienumber"
+                                    value={deviceSerienumber}
+                                    onChange={(event) =>
+                                        setDeviceSerienumber(event.target.value)
                                     }
-                                    placeholder="ex. 123456789"
-                                    inputMode="numeric"
+                                    placeholder="ex. B2S752T2"
+                                    autoComplete="off"
                                     className="h-12 focus-visible:ring-blue-500"
                                 />
                             </div>
@@ -118,11 +137,12 @@ export default function RegisterDevice() {
                                         (valfritt)
                                     </span>
                                 </Label>
+
                                 <Input
                                     id="deviceName"
                                     value={deviceName}
-                                    onChange={(e) =>
-                                        setDeviceName(e.target.value)
+                                    onChange={(event) =>
+                                        setDeviceName(event.target.value)
                                     }
                                     placeholder="ex. Min tracker"
                                     className="h-12 focus-visible:ring-blue-500"
@@ -132,6 +152,7 @@ export default function RegisterDevice() {
                             {error && (
                                 <div className="flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300">
                                     <AlertCircle className="h-5 w-5" />
+
                                     <p className="text-sm font-medium">
                                         {error}
                                     </p>
@@ -141,6 +162,7 @@ export default function RegisterDevice() {
                             {success && (
                                 <div className="flex items-center gap-3 rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-blue-700 dark:text-blue-300">
                                     <CheckCircle2 className="h-5 w-5" />
+
                                     <p className="text-sm font-medium">
                                         {success}
                                     </p>

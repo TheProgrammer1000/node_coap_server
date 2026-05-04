@@ -55,7 +55,7 @@ export function startCoapServer() {
                     const [deviceRows]: any = await pool.query(
                         `
                         SELECT user_ID
-                        FROM device
+                        FROM device_user
                         WHERE device_ID = ?
                         LIMIT 1
                         `,
