@@ -16,7 +16,7 @@ import {
     Smartphone,
 } from "lucide-react";
 import axios from "axios";
-
+//
 import Navbar from "../components/Navbar";
 import LocationSearchCard from "../components/LocationSearchCard";
 import { Button } from "@/components/ui/button";
