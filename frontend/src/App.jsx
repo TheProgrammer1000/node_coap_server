@@ -5,6 +5,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RegisterDevice from "./pages/RegisterDevice";
+import AddLocation from "./pages/AddLocation";
+import GeofenceDashboard from "./pages/GeofenceDashboard";
 
 export default function App() {
     return (
@@ -28,6 +30,24 @@ export default function App() {
                 element={
                     <ProtectedRoute>
                         <Product />
+                    </ProtectedRoute>
+                }
+            />
+
+            <Route
+                path="/work-areas"
+                element={
+                    <ProtectedRoute>
+                        <AddLocation />
+                    </ProtectedRoute>
+                }
+            />
+
+            <Route
+                path="/geofence"
+                element={
+                    <ProtectedRoute>
+                        <GeofenceDashboard />
                     </ProtectedRoute>
                 }
             />

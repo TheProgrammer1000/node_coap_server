@@ -10,10 +10,9 @@ import {
 import L from "leaflet";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, MapPinned, Radio, Wifi, WifiOff } from "lucide-react";
+import { AlertCircle, MapPinned, Wifi, WifiOff } from "lucide-react";
 
 import { socket } from "@/lib/socket";
-import { Button } from "@/components/ui/button";
 import Navbar from "../components/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -62,7 +61,6 @@ export default function Home() {
     const [errorMessage, setErrorMessage] = useState("");
     const [loading, setLoading] = useState(true);
 
-    const [liveEnabled, setLiveEnabled] = useState(false);
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
 
@@ -75,7 +73,7 @@ export default function Home() {
         try {
             setLoading(true);
 
-            const response = await axios.get(`/api/gnss/user/${userId}`);
+            const response = await axios.get(`/api/device/gnss/${userId}`);
             const result = response.data;
 
             console.log("response.data", response.data);
@@ -96,10 +94,6 @@ export default function Home() {
         }
     }
 
-    function toggleLiveMode() {
-        setLiveEnabled((prev) => !prev);
-    }
-
     useEffect(() => {
         if (!user) {
             navigate("/login", { replace: true });
@@ -110,11 +104,10 @@ export default function Home() {
     }, [userId]);
 
     useEffect(() => {
-        if (!userId || !liveEnabled) {
+        if (!userId) {
             setSocketStatus("disconnected");
 
             if (socket.connected) {
-                socket.emit("leave-user-room", userId);
                 socket.disconnect();
             }
 
@@ -136,6 +129,12 @@ export default function Home() {
             setSocketStatus("disconnected");
         }
 
+        function handleConnectError(error) {
+            console.error("Socket connection error:", error);
+
+            setSocketStatus("disconnected");
+        }
+
         function handleJoined(payload) {
             console.log("Joined socket room:", payload);
         }
@@ -149,6 +148,7 @@ export default function Home() {
 
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
+        socket.on("connect_error", handleConnectError);
         socket.on("socket:joined", handleJoined);
         socket.on("gnss:new-position", handleNewPosition);
 
@@ -163,13 +163,14 @@ export default function Home() {
 
             socket.off("connect", handleConnect);
             socket.off("disconnect", handleDisconnect);
+            socket.off("connect_error", handleConnectError);
             socket.off("socket:joined", handleJoined);
             socket.off("gnss:new-position", handleNewPosition);
 
             socket.disconnect();
             setSocketStatus("disconnected");
         };
-    }, [userId, liveEnabled]);
+    }, [userId]);
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
@@ -179,14 +180,7 @@ export default function Home() {
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap items-center gap-3">
                         <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            {!liveEnabled ? (
-                                <>
-                                    <WifiOff className="h-4 w-4 text-slate-500" />
-                                    <span className="text-slate-500">
-                                        Live av
-                                    </span>
-                                </>
-                            ) : socketStatus === "connected" ? (
+                            {socketStatus === "connected" ? (
                                 <>
                                     <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                     <span className="text-blue-700 dark:text-blue-300">
@@ -197,7 +191,7 @@ export default function Home() {
                                 <>
                                     <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                     <span className="text-blue-700 dark:text-blue-300">
-                                        Ansluter...
+                                        Ansluter live...
                                     </span>
                                 </>
                             ) : (
@@ -219,28 +213,6 @@ export default function Home() {
                             </div>
                         )}
                     </div>
-
-                    <Button
-                        type="button"
-                        onClick={toggleLiveMode}
-                        className={
-                            liveEnabled
-                                ? "rounded-2xl bg-slate-900 text-white shadow-lg hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-                                : "rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700"
-                        }
-                    >
-                        {liveEnabled ? (
-                            <>
-                                <WifiOff className="mr-2 h-4 w-4" />
-                                Stoppa live
-                            </>
-                        ) : (
-                            <>
-                                <Radio className="mr-2 h-4 w-4" />
-                                Starta live
-                            </>
-                        )}
-                    </Button>
                 </div>
 
                 {errorMessage && (
@@ -270,7 +242,8 @@ export default function Home() {
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
                                     När din nRF-enhet skickar positioner via
-                                    CoAP kommer de visas här på kartan.
+                                    CoAP kommer de visas här på kartan i
+                                    realtid.
                                 </p>
                             </div>
                         ) : (

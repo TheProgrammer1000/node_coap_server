@@ -56,7 +56,7 @@ export default function RegisterDevice() {
         setIsLoading(true);
 
         try {
-            const response = await axios.post("/api/gnss/device/register", {
+            const response = await axios.post("/api/device/register", {
                 user_ID: Number(user.user_ID),
                 device_name: deviceName.trim() || null,
                 device_serienumber: deviceSerienumber.trim(),

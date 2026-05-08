@@ -39,6 +39,50 @@ export async function sendLiveGnssPosition(
     console.log(`Emitted gnss:new-position to ${roomName}`);
 }
 
+export async function sendLiveGeofencePosition(
+    userId: string | number,
+    position: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit live geofence position");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("Geofence position:", position);
+
+    io.to(roomName).emit("geofence:new-position", position);
+
+    console.log(`Emitted geofence:new-position to ${roomName}`);
+}
+
+export async function sendLiveGeofenceAlert(
+    userId: string | number,
+    alert: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit live geofence alert");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("alert:", alert);
+
+    io.to(roomName).emit("geofence:alert", alert);
+
+    console.log(`Emitted geofence:alert to ${roomName}`);
+}
+
 export function startApiServer() {
     const app = express();
 

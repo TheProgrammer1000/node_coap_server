@@ -4,8 +4,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const stockholmLat = 59.334591;
-const stockholmLon = 18.06324;
+const stockholmLat = 59.309591;
+const stockholmLon = 18.01624;
 
 const randomOffset = () => (Math.random() - 0.5) * 0.02;
 

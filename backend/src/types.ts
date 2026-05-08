@@ -9,3 +9,12 @@ export interface device_param {
     device_name: string;
     device_serienumber: string;
 }
+
+export interface work_area_payload {
+    user_ID: number;
+    device_ID: number;
+    lon: number;
+    lat: number;
+    circle_radius_m: number;
+    matchedAddress: string;
+}
