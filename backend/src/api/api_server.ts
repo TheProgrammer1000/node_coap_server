@@ -1,12 +1,9 @@
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 
 /* WebSocket / Socket.IO */
 import { Server } from "socket.io";
 import { createServer } from "node:http";
-
-dotenv.config();
 
 import routes from "./routes/index.js";
 
