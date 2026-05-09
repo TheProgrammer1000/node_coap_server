@@ -50,7 +50,11 @@ router.post("/geocode", async (req, res) => {
 
         res.json(geo_obj);
     } catch (error) {
-        res.json({ success: false });
+        console.error("Geocode backend error:", error);
+        res.status(500).json({
+            success: false,
+            msg: "Serverfel vid geocoding",
+        });
     }
 });
 
