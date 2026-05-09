@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
     MapContainer,
     TileLayer,
@@ -7,16 +7,25 @@ import {
     Circle,
     useMap,
 } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, MapPinned, Wifi, WifiOff } from "lucide-react";
+import {
+    Activity,
+    AlertCircle,
+    ArrowRight,
+    Clock3,
+    MapPinned,
+    PlusCircle,
+    Smartphone,
+    Wifi,
+    WifiOff,
+} from "lucide-react";
 
 import { socket } from "@/lib/socket";
-import Navbar from "../components/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 
-// Fix för Leaflet marker-icons i Vite/React
 delete L.Icon.Default.prototype._getIconUrl;
 
 L.Icon.Default.mergeOptions({
@@ -26,26 +35,263 @@ L.Icon.Default.mergeOptions({
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-function CenterMapOnFirstPoint({ points }) {
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+const WEAK_ACCURACY_THRESHOLD = 50;
+
+function getPointDeviceId(point) {
+    return point?.device_ID ?? point?.device_id ?? null;
+}
+
+function getDeviceName(device) {
+    const deviceId = getPointDeviceId(device);
+
+    return (
+        device?.device_name ??
+        device?.deviceName ??
+        device?.name ??
+        (deviceId ? `Device ${deviceId}` : "Okänd device")
+    );
+}
+
+function parseTimestamp(timestamp) {
+    if (!timestamp) return null;
+
+    const date = new Date(timestamp);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return date;
+}
+
+function getAgeMs(timestamp) {
+    const date = parseTimestamp(timestamp);
+
+    if (!date) return null;
+
+    return Date.now() - date.getTime();
+}
+
+function getDeviceStatus(point) {
+    const ageMs = getAgeMs(point?.data_timestamp);
+    const acc =
+        point?.acc === null || point?.acc === undefined
+            ? null
+            : Number(point.acc);
+
+    if (acc !== null && !Number.isNaN(acc) && acc > WEAK_ACCURACY_THRESHOLD) {
+        return "weak";
+    }
+
+    if (ageMs === null) {
+        return "unknown";
+    }
+
+    if (ageMs <= ONLINE_THRESHOLD_MS) {
+        return "online";
+    }
+
+    return "offline";
+}
+
+function getStatusLabel(status) {
+    if (status === "online") return "Online";
+    if (status === "offline") return "Offline";
+    if (status === "weak") return "Svag accuracy";
+    return "Okänd";
+}
+
+function getStatusClasses(status) {
+    if (status === "online") {
+        return "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-800";
+    }
+
+    if (status === "weak") {
+        return "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:ring-orange-800";
+    }
+
+    if (status === "offline") {
+        return "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700";
+    }
+
+    return "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700";
+}
+
+function getMarkerIcon(status, selected) {
+    let color = "#64748b";
+
+    if (status === "online") color = "#2563eb";
+    if (status === "weak") color = "#f97316";
+    if (status === "offline") color = "#64748b";
+
+    const size = selected ? 24 : 18;
+    const border = selected ? 4 : 3;
+
+    return L.divIcon({
+        className: "",
+        html: `
+            <div style="
+                width:${size}px;
+                height:${size}px;
+                border-radius:9999px;
+                background:${color};
+                border:${border}px solid white;
+                box-shadow:0 8px 22px rgba(15, 23, 42, 0.35);
+            "></div>
+        `,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2],
+    });
+}
+
+function formatTimestamp(timestamp) {
+    const date = parseTimestamp(timestamp);
+
+    if (!date) return "N/A";
+
+    return new Intl.DateTimeFormat("sv-SE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(date);
+}
+
+function formatAge(timestamp) {
+    const ageMs = getAgeMs(timestamp);
+
+    if (ageMs === null) return "Okänd tid";
+
+    const seconds = Math.max(0, Math.floor(ageMs / 1000));
+
+    if (seconds < 60) return "<1 min sedan";
+
+    const minutes = Math.floor(seconds / 60);
+
+    if (minutes < 60) return `${minutes} min sedan`;
+
+    const hours = Math.floor(minutes / 60);
+
+    if (hours < 24) return `${hours} h sedan`;
+
+    const days = Math.floor(hours / 24);
+
+    return `${days} dagar sedan`;
+}
+
+function normalizeGnssResponse(result) {
+    const data = result?.data;
+
+    if (Array.isArray(data) && Array.isArray(data[0])) {
+        return data[0];
+    }
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    return [];
+}
+
+function sortByNewest(points) {
+    return [...points].sort((a, b) => {
+        const aTime = parseTimestamp(a.data_timestamp)?.getTime() ?? 0;
+        const bTime = parseTimestamp(b.data_timestamp)?.getTime() ?? 0;
+
+        return bTime - aTime;
+    });
+}
+
+function upsertLatestDevicePosition(previousPoints, newPoint) {
+    const deviceId = getPointDeviceId(newPoint);
+
+    if (!deviceId) {
+        return sortByNewest([newPoint, ...previousPoints]);
+    }
+
+    const existingPoint = previousPoints.find(
+        (point) => String(getPointDeviceId(point)) === String(deviceId),
+    );
+
+    const mergedPoint = {
+        ...(existingPoint ?? {}),
+        ...newPoint,
+    };
+
+    const filteredPoints = previousPoints.filter(
+        (point) => String(getPointDeviceId(point)) !== String(deviceId),
+    );
+
+    return sortByNewest([mergedPoint, ...filteredPoints]);
+}
+
+function ResizeMap() {
     const map = useMap();
-    const hasCenteredMap = useRef(false);
 
     useEffect(() => {
-        if (hasCenteredMap.current || points.length === 0) {
+        const timer = window.setTimeout(() => {
+            map.invalidateSize();
+        }, 150);
+
+        function handleResize() {
+            map.invalidateSize();
+        }
+
+        window.addEventListener("resize", handleResize);
+
+        return () => {
+            window.clearTimeout(timer);
+            window.removeEventListener("resize", handleResize);
+        };
+    }, [map]);
+
+    return null;
+}
+
+function FitMapToDevices({ devices }) {
+    const map = useMap();
+    const hasFittedMap = useRef(false);
+
+    useEffect(() => {
+        if (hasFittedMap.current || devices.length === 0) {
             return;
         }
 
-        const firstPoint = points[0];
-        const lat = Number(firstPoint.lat);
-        const lon = Number(firstPoint.lon);
+        const validPositions = devices
+            .map((device) => {
+                const lat = Number(device.lat);
+                const lon = Number(device.lon);
 
-        if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                    return null;
+                }
+
+                return [lat, lon];
+            })
+            .filter(Boolean);
+
+        if (validPositions.length === 0) {
             return;
         }
 
-        map.setView([lat, lon], 13);
-        hasCenteredMap.current = true;
-    }, [points, map]);
+        window.setTimeout(() => {
+            map.invalidateSize();
+
+            if (validPositions.length === 1) {
+                map.setView(validPositions[0], 14);
+            } else {
+                map.fitBounds(validPositions, {
+                    padding: [45, 45],
+                    maxZoom: 14,
+                });
+            }
+
+            hasFittedMap.current = true;
+        }, 150);
+    }, [devices, map]);
 
     return null;
 }
@@ -57,12 +303,55 @@ export default function Home() {
     const user = storedUser ? JSON.parse(storedUser) : null;
     const userId = user?.user_ID || null;
 
-    const [points, setPoints] = useState([]);
+    const [devices, setDevices] = useState([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState(null);
     const [errorMessage, setErrorMessage] = useState("");
     const [loading, setLoading] = useState(true);
 
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
+
+    const sortedDevices = useMemo(() => sortByNewest(devices), [devices]);
+
+    const selectedDevice = useMemo(() => {
+        if (!selectedDeviceId) return sortedDevices[0] ?? null;
+
+        return (
+            sortedDevices.find(
+                (device) =>
+                    String(getPointDeviceId(device)) ===
+                    String(selectedDeviceId),
+            ) ??
+            sortedDevices[0] ??
+            null
+        );
+    }, [selectedDeviceId, sortedDevices]);
+
+    const dashboardStats = useMemo(() => {
+        const total = sortedDevices.length;
+
+        const online = sortedDevices.filter(
+            (device) => getDeviceStatus(device) === "online",
+        ).length;
+
+        const offline = sortedDevices.filter(
+            (device) => getDeviceStatus(device) === "offline",
+        ).length;
+
+        const weakAccuracy = sortedDevices.filter(
+            (device) => getDeviceStatus(device) === "weak",
+        ).length;
+
+        const latestTimestamp = sortedDevices[0]?.data_timestamp ?? null;
+
+        return {
+            total,
+            online,
+            offline,
+            weakAccuracy,
+            latestTimestamp,
+        };
+    }, [sortedDevices]);
 
     async function loadGnssData() {
         if (!userId) {
@@ -73,18 +362,25 @@ export default function Home() {
         try {
             setLoading(true);
 
-            const response = await axios.get(`/api/device/gnss/${userId}`);
+            const response = await axios.get(`/api/device/gnss/user/${userId}`);
             const result = response.data;
 
-            console.log("response.data", response.data);
+            const rows = normalizeGnssResponse(result);
 
-            if (response.data.success !== false) {
-                setPoints(Array.isArray(result.data) ? result.data : []);
+            if (result.success !== false) {
+                const sortedRows = sortByNewest(rows);
+
+                setDevices(sortedRows);
+                setSelectedDeviceId((currentSelectedId) => {
+                    if (currentSelectedId) return currentSelectedId;
+
+                    return getPointDeviceId(sortedRows[0]) ?? null;
+                });
                 setErrorMessage("");
             } else {
-                setErrorMessage(
-                    response.data.msg || "Failed to load GNSS data",
-                );
+                setDevices([]);
+                setSelectedDeviceId(null);
+                setErrorMessage("");
             }
         } catch (error) {
             console.error("Failed to load GNSS data:", error);
@@ -142,8 +438,22 @@ export default function Home() {
         function handleNewPosition(newPoint) {
             console.log("Live GNSS position:", newPoint);
 
-            setPoints((prevPoints) => [newPoint, ...prevPoints]);
-            setLastLiveUpdate(new Date().toLocaleTimeString());
+            setDevices((previousDevices) =>
+                upsertLatestDevicePosition(previousDevices, newPoint),
+            );
+
+            setSelectedDeviceId((currentSelectedId) => {
+                if (currentSelectedId) return currentSelectedId;
+
+                return getPointDeviceId(newPoint) ?? null;
+            });
+
+            setLastLiveUpdate(
+                new Date().toLocaleTimeString("sv-SE", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                }),
+            );
         }
 
         socket.on("connect", handleConnect);
@@ -172,102 +482,368 @@ export default function Home() {
         };
     }, [userId]);
 
+    const hasDevices = sortedDevices.length > 0;
+
     return (
-        <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
-            <Navbar />
+        <section className="mx-auto max-w-[1700px] px-4 py-6 md:px-6 md:py-8">
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">
+                        Live device overview
+                    </h1>
 
-            <section className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-5">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            {socketStatus === "connected" ? (
-                                <>
-                                    <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                    <span className="text-blue-700 dark:text-blue-300">
-                                        Live connected
-                                    </span>
-                                </>
-                            ) : socketStatus === "connecting" ? (
-                                <>
-                                    <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                    <span className="text-blue-700 dark:text-blue-300">
-                                        Ansluter live...
-                                    </span>
-                                </>
-                            ) : (
-                                <>
-                                    <WifiOff className="h-4 w-4 text-red-500" />
-                                    <span className="text-red-500">
-                                        Live disconnected
-                                    </span>
-                                </>
-                            )}
-                        </div>
-
-                        {lastLiveUpdate && (
-                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                                Senaste live-update:{" "}
-                                <span className="font-semibold">
-                                    {lastLiveUpdate}
-                                </span>
-                            </div>
-                        )}
-                    </div>
+                    <p className="mt-2 max-w-2xl text-base text-slate-600 dark:text-slate-400">
+                        Se senaste positionen för varje registrerad enhet och
+                        följ live-data från dina nRF-devices i realtid.
+                    </p>
                 </div>
 
-                {errorMessage && (
-                    <div className="mb-4 flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300">
-                        <AlertCircle className="h-5 w-5" />
-                        <p className="text-sm font-medium">{errorMessage}</p>
-                    </div>
-                )}
+                <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    {socketStatus === "connected" ? (
+                        <>
+                            <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-blue-700 dark:text-blue-300">
+                                Live connected
+                            </span>
+                        </>
+                    ) : socketStatus === "connecting" ? (
+                        <>
+                            <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-blue-700 dark:text-blue-300">
+                                Ansluter live...
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <WifiOff className="h-4 w-4 text-red-500" />
+                            <span className="text-red-500">
+                                Live disconnected
+                            </span>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {errorMessage && (
+                <div className="mb-4 flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300">
+                    <AlertCircle className="h-5 w-5" />
+                    <p className="text-sm font-medium">{errorMessage}</p>
+                </div>
+            )}
+
+            <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+                <div className="space-y-5">
+                    <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <CardContent className="p-5">
+                            <div className="flex items-start gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/40">
+                                    <Activity className="h-6 w-6 text-blue-600 dark:text-blue-300" />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h2 className="text-xl font-bold">
+                                                Senaste status
+                                            </h2>
+
+                                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                                {dashboardStats.total}{" "}
+                                                registrerade devices
+                                            </p>
+                                        </div>
+
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                            {dashboardStats.total}
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                                        <div className="rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                                            <p className="text-slate-500 dark:text-slate-400">
+                                                Online
+                                            </p>
+                                            <p className="mt-1 text-lg font-bold">
+                                                {dashboardStats.online}
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                                            <p className="text-slate-500 dark:text-slate-400">
+                                                Offline
+                                            </p>
+                                            <p className="mt-1 text-lg font-bold">
+                                                {dashboardStats.offline}
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                                            <p className="text-slate-500 dark:text-slate-400">
+                                                Accuracy
+                                            </p>
+                                            <p className="mt-1 text-lg font-bold">
+                                                {dashboardStats.weakAccuracy}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <Clock3 className="h-4 w-4 text-slate-500" />
+                                            <span className="font-semibold">
+                                                Senaste data:
+                                            </span>
+                                            <span className="text-slate-600 dark:text-slate-400">
+                                                {dashboardStats.latestTimestamp
+                                                    ? formatAge(
+                                                          dashboardStats.latestTimestamp,
+                                                      )
+                                                    : "Ingen data ännu"}
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                            {lastLiveUpdate
+                                                ? `Senaste live-update ${lastLiveUpdate}`
+                                                : "Väntar på live-data från Socket.IO"}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <CardContent className="p-0">
+                            <div className="border-b border-slate-200 p-5 dark:border-slate-800">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-xl font-bold">
+                                            Devices
+                                        </h2>
+
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                            Senaste kända position per enhet.
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                        {dashboardStats.total}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="max-h-[calc(100dvh-500px)] min-h-[230px] overflow-y-auto p-4">
+                                {loading ? (
+                                    <p className="px-2 py-6 text-center text-sm text-slate-500">
+                                        Laddar devices...
+                                    </p>
+                                ) : !hasDevices ? (
+                                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center dark:border-slate-700 dark:bg-slate-950">
+                                        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+                                            <Smartphone className="h-6 w-6 text-slate-500" />
+                                        </div>
+
+                                        <p className="font-bold">
+                                            Ingen device registrerad
+                                        </p>
+
+                                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                            Lägg till din första nRF-device för
+                                            att börja ta emot GNSS-data via CoAP
+                                            och visa positioner på kartan.
+                                        </p>
+
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                navigate("/register-device")
+                                            }
+                                            className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                                        >
+                                            <PlusCircle className="h-4 w-4" />
+                                            Registrera device
+                                            <ArrowRight className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {sortedDevices.map((device) => {
+                                            const deviceId =
+                                                getPointDeviceId(device);
+                                            const deviceName =
+                                                getDeviceName(device);
+                                            const status =
+                                                getDeviceStatus(device);
+                                            const isSelected =
+                                                String(deviceId) ===
+                                                String(
+                                                    getPointDeviceId(
+                                                        selectedDevice,
+                                                    ),
+                                                );
+
+                                            return (
+                                                <button
+                                                    key={`${deviceId}-${device.data_timestamp}`}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedDeviceId(
+                                                            deviceId,
+                                                        )
+                                                    }
+                                                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                                                        isSelected
+                                                            ? "border-blue-300 bg-blue-50 shadow-sm dark:border-blue-800 dark:bg-blue-950/30"
+                                                            : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                                                            <Smartphone className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="truncate font-bold text-slate-950 dark:text-white">
+                                                                        {
+                                                                            deviceName
+                                                                        }
+                                                                    </p>
+
+                                                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                                                        ID{" "}
+                                                                        {deviceId ??
+                                                                            "N/A"}
+                                                                    </p>
+
+                                                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                                        {formatAge(
+                                                                            device.data_timestamp,
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+
+                                                                <span
+                                                                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
+                                                                        status,
+                                                                    )}`}
+                                                                >
+                                                                    {getStatusLabel(
+                                                                        status,
+                                                                    )}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                                <div className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">
+                                                                    <p className="text-slate-500 dark:text-slate-400">
+                                                                        Accuracy
+                                                                    </p>
+
+                                                                    <p className="font-bold">
+                                                                        {device.acc ??
+                                                                            "N/A"}{" "}
+                                                                        m
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">
+                                                                    <p className="text-slate-500 dark:text-slate-400">
+                                                                        Senast
+                                                                    </p>
+
+                                                                    <p className="truncate font-bold">
+                                                                        {formatTimestamp(
+                                                                            device.data_timestamp,
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
 
                 <Card className="overflow-hidden border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
                     <CardContent className="p-0">
                         {loading ? (
-                            <div className="flex h-[calc(100dvh-275px)] min-h-[320px] items-center justify-center md:h-[calc(100dvh-225px)] md:min-h-[420px] lg:h-[calc(100dvh-220px)] lg:min-h-[470px]">
+                            <div className="flex h-[calc(100dvh-230px)] min-h-[650px] items-center justify-center">
                                 <p className="text-slate-500">
                                     Laddar GPS-data...
                                 </p>
                             </div>
-                        ) : points.length <= 0 ? (
-                            <div className="flex h-[calc(100dvh-275px)] min-h-[320px] flex-col items-center justify-center px-6 text-center md:h-[calc(100dvh-225px)] md:min-h-[420px] lg:h-[calc(100dvh-220px)] lg:min-h-[470px]">
+                        ) : !hasDevices ? (
+                            <div className="flex h-[calc(100dvh-230px)] min-h-[650px] flex-col items-center justify-center px-6 text-center">
                                 <div className="mb-4 rounded-2xl bg-slate-100 p-4 dark:bg-slate-800">
                                     <MapPinned className="h-8 w-8 text-slate-500" />
                                 </div>
 
-                                <h3 className="text-xl font-semibold">
-                                    Ingen GPS-data sparad ännu
+                                <h3 className="text-xl font-bold">
+                                    Kartan är redo
                                 </h3>
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
-                                    När din nRF-enhet skickar positioner via
-                                    CoAP kommer de visas här på kartan i
-                                    realtid.
+                                    När du registrerar en device och den skickar
+                                    GNSS-positioner via CoAP kommer senaste
+                                    positionen visas här i realtid.
                                 </p>
+
+                                <button
+                                    type="button"
+                                    onClick={() => navigate("/register-device")}
+                                    className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                                >
+                                    <PlusCircle className="h-4 w-4" />
+                                    Lägg till device
+                                    <ArrowRight className="h-4 w-4" />
+                                </button>
                             </div>
                         ) : (
-                            <div className="h-[calc(100dvh-275px)] min-h-[320px] w-full md:h-[calc(100dvh-225px)] md:min-h-[420px] lg:h-[calc(100dvh-220px)] lg:min-h-[470px]">
+                            <div className="h-[calc(100dvh-230px)] min-h-[650px] w-full">
                                 <MapContainer
                                     center={[59.33, 18.06]}
                                     zoom={13}
                                     className="h-full w-full"
                                 >
+                                    <ResizeMap />
+
                                     <TileLayer
                                         maxZoom={19}
                                         attribution='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                                         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
                                     />
 
-                                    <CenterMapOnFirstPoint points={points} />
+                                    <FitMapToDevices devices={sortedDevices} />
 
-                                    {points.map((point, index) => {
-                                        const lat = Number(point.lat);
-                                        const lon = Number(point.lon);
+                                    {sortedDevices.map((device, index) => {
+                                        const lat = Number(device.lat);
+                                        const lon = Number(device.lon);
                                         const acc =
-                                            point.acc === null
+                                            device.acc === null ||
+                                            device.acc === undefined
                                                 ? null
-                                                : Number(point.acc);
+                                                : Number(device.acc);
+                                        const deviceId =
+                                            getPointDeviceId(device);
+                                        const deviceName =
+                                            getDeviceName(device);
+                                        const status = getDeviceStatus(device);
+                                        const isSelected =
+                                            String(deviceId) ===
+                                            String(
+                                                getPointDeviceId(
+                                                    selectedDevice,
+                                                ),
+                                            );
 
                                         if (
                                             Number.isNaN(lat) ||
@@ -278,70 +854,71 @@ export default function Home() {
 
                                         return (
                                             <Fragment
-                                                key={`${point.device_ID ?? "device"}-${point.data_timestamp ?? index}-${index}`}
+                                                key={`${deviceId ?? "device"}-${device.data_timestamp ?? index}`}
                                             >
-                                                <Marker position={[lat, lon]}>
+                                                <Marker
+                                                    position={[lat, lon]}
+                                                    icon={getMarkerIcon(
+                                                        status,
+                                                        isSelected,
+                                                    )}
+                                                    eventHandlers={{
+                                                        click: () =>
+                                                            setSelectedDeviceId(
+                                                                deviceId,
+                                                            ),
+                                                    }}
+                                                >
                                                     <Popup
-                                                        maxWidth={170}
-                                                        minWidth={130}
-                                                        className="compact-gnss-popup"
+                                                        maxWidth={230}
+                                                        minWidth={185}
                                                     >
-                                                        <div className="w-[135px] text-xs leading-tight text-slate-950">
-                                                            <p className="mb-2 font-bold">
-                                                                GNSS position
+                                                        <div className="text-xs leading-tight text-slate-950">
+                                                            <p className="text-sm font-bold">
+                                                                {deviceName}
                                                             </p>
 
-                                                            <div className="space-y-1">
-                                                                <div className="flex justify-between gap-2">
-                                                                    <span className="text-slate-500">
-                                                                        Device
-                                                                    </span>
-                                                                    <span className="max-w-[70px] truncate font-semibold">
-                                                                        {point.device_ID ??
-                                                                            point.device_id ??
-                                                                            "N/A"}
-                                                                    </span>
-                                                                </div>
+                                                            <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
+                                                                ID{" "}
+                                                                {deviceId ??
+                                                                    "N/A"}
+                                                            </p>
 
+                                                            <div className="space-y-1.5">
                                                                 <div className="flex justify-between gap-2">
                                                                     <span className="text-slate-500">
-                                                                        Lat
+                                                                        Status
                                                                     </span>
-                                                                    <span className="font-semibold">
-                                                                        {lat.toFixed(
-                                                                            5,
-                                                                        )}
-                                                                    </span>
-                                                                </div>
 
-                                                                <div className="flex justify-between gap-2">
-                                                                    <span className="text-slate-500">
-                                                                        Lon
-                                                                    </span>
                                                                     <span className="font-semibold">
-                                                                        {lon.toFixed(
-                                                                            5,
+                                                                        {getStatusLabel(
+                                                                            status,
                                                                         )}
                                                                     </span>
                                                                 </div>
 
                                                                 <div className="flex justify-between gap-2 rounded-md bg-blue-50 px-2 py-1">
                                                                     <span className="font-medium text-blue-700">
-                                                                        Acc
+                                                                        Accuracy
                                                                     </span>
+
                                                                     <span className="font-bold text-blue-700">
-                                                                        {point.acc ??
-                                                                            "N/A"}
+                                                                        {device.acc ??
+                                                                            "N/A"}{" "}
+                                                                        m
                                                                     </span>
                                                                 </div>
 
                                                                 <div className="pt-1">
                                                                     <p className="text-[10px] text-slate-500">
-                                                                        Time
+                                                                        Last
+                                                                        update
                                                                     </p>
-                                                                    <p className="truncate text-[11px] font-semibold">
-                                                                        {point.data_timestamp ??
-                                                                            "N/A"}
+
+                                                                    <p className="text-[11px] font-semibold">
+                                                                        {formatTimestamp(
+                                                                            device.data_timestamp,
+                                                                        )}
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -354,14 +931,24 @@ export default function Home() {
                                                         <Circle
                                                             center={[lat, lon]}
                                                             radius={Math.min(
-                                                                acc * 0.03,
-                                                                5,
+                                                                Math.max(
+                                                                    acc,
+                                                                    3,
+                                                                ),
+                                                                250,
                                                             )}
                                                             pathOptions={{
-                                                                color: "#2563eb",
+                                                                color:
+                                                                    status ===
+                                                                    "weak"
+                                                                        ? "#f97316"
+                                                                        : "#2563eb",
                                                                 fillColor:
-                                                                    "#3b82f6",
-                                                                fillOpacity: 0.15,
+                                                                    status ===
+                                                                    "weak"
+                                                                        ? "#fb923c"
+                                                                        : "#3b82f6",
+                                                                fillOpacity: 0.12,
                                                                 weight: 1,
                                                             }}
                                                         />
@@ -374,7 +961,30 @@ export default function Home() {
                         )}
                     </CardContent>
                 </Card>
-            </section>
-        </main>
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 md:grid-cols-3">
+                <p>
+                    <span className="font-bold text-slate-950 dark:text-white">
+                        Blå marker:
+                    </span>{" "}
+                    online device
+                </p>
+
+                <p>
+                    <span className="font-bold text-slate-950 dark:text-white">
+                        Grå marker:
+                    </span>{" "}
+                    offline device
+                </p>
+
+                <p>
+                    <span className="font-bold text-slate-950 dark:text-white">
+                        Cirkel:
+                    </span>{" "}
+                    GNSS accuracy-radie
+                </p>
+            </div>
+        </section>
     );
 }

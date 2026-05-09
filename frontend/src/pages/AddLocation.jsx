@@ -272,8 +272,6 @@ export default function AddLocation() {
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-white">
-            <Navbar />
-
             <section className="mx-auto max-w-7xl px-6 py-10">
                 <div className="mb-6">
                     <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">

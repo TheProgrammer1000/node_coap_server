@@ -81,8 +81,8 @@ export default function Navbar() {
     const location = useLocation();
 
     const logout = useAuthStore((state) => state.logout);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [liveAlerts, setLiveAlerts] = useState([]);
     const [unreadAlertCount, setUnreadAlertCount] = useState(0);
     const [alertsOpen, setAlertsOpen] = useState(false);
@@ -123,9 +123,7 @@ export default function Navbar() {
         function handleGeofenceAlert(alert) {
             console.log("Navbar geofence alert:", alert);
 
-            setLiveAlerts((prevAlerts) => {
-                return [alert, ...prevAlerts].slice(0, 10);
-            });
+            setLiveAlerts((prevAlerts) => [alert, ...prevAlerts].slice(0, 10));
 
             if (!alertsOpen) {
                 setUnreadAlertCount((prevCount) => prevCount + 1);
@@ -199,22 +197,16 @@ export default function Navbar() {
         return location.pathname === path;
     }
 
-    function navButtonClass(path) {
-        return isActive(path)
-            ? "rounded-2xl bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg hover:from-blue-600 hover:to-violet-600"
-            : "rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
-    }
-
     const navLinks = [
-        {
-            to: "/home",
-            label: "Dashboard",
-            icon: Home,
-        },
         {
             to: "/product",
             label: "Platform",
             icon: Box,
+        },
+        {
+            to: "/home",
+            label: "Dashboard",
+            icon: Home,
         },
         {
             to: "/register-device",
@@ -235,105 +227,125 @@ export default function Navbar() {
 
     return (
         <>
-            <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="mx-auto max-w-7xl px-4 py-3 md:px-6">
+            <aside className="fixed left-0 top-0 z-50 hidden h-dvh w-72 flex-col border-r border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:flex">
+                <Link
+                    to="/home"
+                    className="mb-6 flex items-center gap-3 rounded-3xl px-2 py-2 transition hover:bg-slate-100 dark:hover:bg-slate-900"
+                >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-900">
+                        <img
+                            src={logo}
+                            alt="GeoNode logo"
+                            className="h-10 w-10 object-contain"
+                        />
+                    </div>
+
+                    <div className="min-w-0">
+                        <p className="truncate text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+                            GeoNode
+                        </p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                            IoT GNSS Tracking Platform
+                        </p>
+                    </div>
+                </Link>
+
+                <nav className="space-y-2">
+                    {navLinks.map((item) => {
+                        const Icon = item.icon;
+
+                        return (
+                            <Link
+                                key={item.to}
+                                to={item.to}
+                                className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition ${
+                                    isActive(item.to)
+                                        ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
+                                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                                }`}
+                            >
+                                <Icon className="h-5 w-5" />
+                                {item.label}
+                            </Link>
+                        );
+                    })}
+                </nav>
+
+                <div className="mt-auto space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                    <button
+                        type="button"
+                        onClick={toggleAlerts}
+                        className="relative flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                    >
+                        <Bell className="h-5 w-5" />
+                        Alerts
+                        {unreadAlertCount > 0 && (
+                            <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold text-white shadow">
+                                {unreadAlertCount}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                    >
+                        {theme === "dark" ? (
+                            <>
+                                <Sun className="h-5 w-5" />
+                                Light mode
+                            </>
+                        ) : (
+                            <>
+                                <Moon className="h-5 w-5" />
+                                Dark mode
+                            </>
+                        )}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-red-50 hover:text-red-700 dark:text-slate-200 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                    >
+                        <LogOut className="h-5 w-5" />
+                        Logga ut
+                    </button>
+                </div>
+            </aside>
+
+            <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 xl:hidden">
+                <div className="mx-auto px-4 py-3">
                     <div className="flex items-center justify-between gap-4">
                         <Link
                             to="/home"
-                            className="flex w-[190px] shrink-0 items-center gap-3 2xl:w-[230px]"
+                            className="flex min-w-0 items-center gap-3"
                             onClick={() => setMobileMenuOpen(false)}
                         >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-900">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-900">
                                 <img
                                     src={logo}
                                     alt="GeoNode logo"
-                                    className="h-10 w-10 object-contain"
+                                    className="h-9 w-9 object-contain"
                                 />
                             </div>
 
                             <div className="min-w-0">
-                                <p className="truncate text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+                                <p className="truncate text-lg font-bold tracking-tight text-slate-950 dark:text-white">
                                     GeoNode
                                 </p>
                                 <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                                    IoT GNSS Tracking Platform
+                                    IoT GNSS Tracking
                                 </p>
                             </div>
                         </Link>
-
-                        <nav className="hidden flex-1 items-center justify-center gap-2 xl:flex">
-                            {navLinks.map((item) => {
-                                const Icon = item.icon;
-
-                                return (
-                                    <Button
-                                        key={item.to}
-                                        asChild
-                                        variant="ghost"
-                                        className={`h-11 px-4 text-sm font-semibold ${navButtonClass(
-                                            item.to,
-                                        )}`}
-                                    >
-                                        <Link to={item.to}>
-                                            <Icon className="mr-2 h-4 w-4" />
-                                            {item.label}
-                                        </Link>
-                                    </Button>
-                                );
-                            })}
-                        </nav>
-
-                        <div className="hidden shrink-0 items-center gap-2 xl:flex">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={toggleAlerts}
-                                className="relative h-11 rounded-2xl border-slate-200 bg-white px-4 text-sm font-semibold dark:border-slate-800 dark:bg-slate-900"
-                            >
-                                <Bell className="mr-2 h-4 w-4" />
-                                Alerts
-                                {unreadAlertCount > 0 && (
-                                    <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold text-white shadow">
-                                        {unreadAlertCount}
-                                    </span>
-                                )}
-                            </Button>
-
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={toggleTheme}
-                                className="h-11 rounded-2xl border-slate-200 bg-white px-4 text-sm font-semibold dark:border-slate-800 dark:bg-slate-900"
-                            >
-                                {theme === "dark" ? (
-                                    <>
-                                        <Sun className="mr-2 h-4 w-4" />
-                                        Light
-                                    </>
-                                ) : (
-                                    <>
-                                        <Moon className="mr-2 h-4 w-4" />
-                                        Dark
-                                    </>
-                                )}
-                            </Button>
-
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={handleLogout}
-                                className="h-11 rounded-2xl border-slate-200 bg-white px-4 text-sm font-semibold dark:border-slate-800 dark:bg-slate-900"
-                            >
-                                <LogOut className="mr-2 h-4 w-4" />
-                                Logga ut
-                            </Button>
-                        </div>
 
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setMobileMenuOpen((prev) => !prev)}
-                            className="relative h-11 w-11 shrink-0 rounded-2xl border-slate-200 bg-white p-0 xl:hidden dark:border-slate-800 dark:bg-slate-900"
+                            className="relative h-11 w-11 shrink-0 rounded-2xl border-slate-200 bg-white p-0 dark:border-slate-800 dark:bg-slate-900"
                         >
                             {mobileMenuOpen ? (
                                 <X className="h-5 w-5" />
@@ -350,30 +362,27 @@ export default function Navbar() {
                     </div>
 
                     {mobileMenuOpen && (
-                        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 xl:hidden dark:border-slate-800">
+                        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
                             <div className="grid gap-3">
                                 {navLinks.map((item) => {
                                     const Icon = item.icon;
 
                                     return (
-                                        <Button
+                                        <Link
                                             key={item.to}
-                                            asChild
-                                            variant="ghost"
-                                            className={`h-12 w-full justify-start rounded-2xl px-4 text-base font-semibold ${navButtonClass(
-                                                item.to,
-                                            )}`}
+                                            to={item.to}
+                                            onClick={() =>
+                                                setMobileMenuOpen(false)
+                                            }
+                                            className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-base font-semibold transition ${
+                                                isActive(item.to)
+                                                    ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
+                                                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            }`}
                                         >
-                                            <Link
-                                                to={item.to}
-                                                onClick={() =>
-                                                    setMobileMenuOpen(false)
-                                                }
-                                            >
-                                                <Icon className="mr-2 h-5 w-5" />
-                                                {item.label}
-                                            </Link>
-                                        </Button>
+                                            <Icon className="h-5 w-5" />
+                                            {item.label}
+                                        </Link>
                                     );
                                 })}
                             </div>
@@ -434,10 +443,10 @@ export default function Navbar() {
                         type="button"
                         aria-label="Stäng alerts"
                         onClick={closeAlerts}
-                        className="fixed inset-0 z-[80] bg-slate-950/30 backdrop-blur-[1px]"
+                        className="fixed inset-0 z-[9000] bg-slate-950/40 backdrop-blur-[2px]"
                     />
 
-                    <aside className="fixed right-0 top-0 z-[90] flex h-dvh w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:right-4 sm:top-4 sm:h-[calc(100dvh-2rem)] sm:rounded-3xl sm:border">
+                    <aside className="fixed right-0 top-0 z-[9010] flex h-dvh w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:right-4 sm:top-4 sm:h-[calc(100dvh-2rem)] sm:rounded-3xl sm:border">
                         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <div>
                                 <p className="text-lg font-bold text-slate-950 dark:text-white">

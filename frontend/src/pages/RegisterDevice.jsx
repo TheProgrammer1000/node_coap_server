@@ -91,8 +91,6 @@ export default function RegisterDevice() {
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
-            <Navbar />
-
             <section className="mx-auto flex min-h-[calc(100dvh-112px)] max-w-7xl items-center justify-center px-6 py-8">
                 <Card className="w-full max-w-xl border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
                     <CardHeader className="space-y-3">

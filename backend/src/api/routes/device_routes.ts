@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
     getGnssDataByDeviceId,
-    getLastPositions,
+    get_user_devices_latest_positions,
     get_gnss_user_device,
     get_deviceID_by_userID,
     get_all_deviceID_by_userID,
@@ -49,21 +49,20 @@ router.post("/register", async (req, res) => {
     }
 });
 
-router.get("/gnss/:user_ID", async (req, res) => {
+router.get("/gnss/user/:user_ID", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
 
-        const data = await get_deviceID_by_userID(user_ID);
+        const data = await get_user_devices_latest_positions(user_ID);
 
         if (data.length > 0) {
-            console.log(data[0].device_ID);
-
-            const result = await get_gnss_user_device(data[0].device_ID);
-
-            console.log(result);
-            res.json({ success: true, data: result });
+            console.log(data);
+            res.json({ success: true, data });
         } else {
-            res.json({ success: false, msg: "No userid attach to deviceID" });
+            res.json({
+                success: false,
+                msg: "no devices register to user and cannot get device gnss",
+            });
         }
     } catch (error) {
         console.error("Failed to get GNSS data by device:", error);

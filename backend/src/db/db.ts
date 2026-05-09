@@ -1,12 +1,10 @@
 import pool from "./db_connection.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-export async function getLastPositions(limit = 10) {
-    const safeLimit = Math.min(Math.max(Number(limit), 1), 500);
-
+export async function get_user_devices_latest_positions(user_ID: number) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_last_posistions(?);",
-        [safeLimit],
+        "CALL get_user_devices_latest_positions(?);",
+        [user_ID],
     );
 
     return result[0];

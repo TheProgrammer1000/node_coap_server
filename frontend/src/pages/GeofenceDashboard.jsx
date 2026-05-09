@@ -332,8 +332,6 @@ export default function GeofenceDashboard() {
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-white">
-            <Navbar />
-
             <section className="mx-auto max-w-7xl px-6 py-10">
                 <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                     <div>
@@ -381,15 +379,6 @@ export default function GeofenceDashboard() {
                                 </span>
                             </div>
                         )}
-
-                        <button
-                            type="button"
-                            onClick={loadGeofenceData}
-                            disabled={loading}
-                            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
-                        >
-                            {loading ? "Uppdaterar..." : "Uppdatera"}
-                        </button>
                     </div>
                 </div>
 
