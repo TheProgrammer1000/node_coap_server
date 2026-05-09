@@ -8,6 +8,7 @@ import {
     Polyline,
     useMap,
 } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import axios from "axios";
 import {
@@ -22,7 +23,6 @@ import {
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
-import Navbar from "../components/Navbar";
 
 delete L.Icon.Default.prototype._getIconUrl;
 
@@ -73,6 +73,29 @@ function getLatestGeofenceRows(rows) {
     return Array.from(latestByDeviceArea.values());
 }
 
+function ResizeMap() {
+    const map = useMap();
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            map.invalidateSize();
+        }, 150);
+
+        function handleResize() {
+            map.invalidateSize();
+        }
+
+        window.addEventListener("resize", handleResize);
+
+        return () => {
+            window.clearTimeout(timer);
+            window.removeEventListener("resize", handleResize);
+        };
+    }, [map]);
+
+    return null;
+}
+
 function FitMapToGeofences({ rows }) {
     const map = useMap();
 
@@ -98,10 +121,18 @@ function FitMapToGeofences({ rows }) {
 
         if (points.length === 0) return;
 
-        map.fitBounds(L.latLngBounds(points), {
-            padding: [60, 60],
-            maxZoom: 13,
-        });
+        const timer = window.setTimeout(() => {
+            map.invalidateSize();
+
+            map.fitBounds(L.latLngBounds(points), {
+                padding: [60, 60],
+                maxZoom: 13,
+            });
+        }, 150);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
     }, [rows, map]);
 
     return null;
@@ -331,405 +362,378 @@ export default function GeofenceDashboard() {
     }, [userId]);
 
     return (
-        <main className="min-h-screen bg-slate-50 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-white">
-            <section className="mx-auto max-w-7xl px-6 py-10">
-                <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">
-                            Geofence Status
-                        </h1>
+        <section className="mx-auto max-w-[1700px] px-4 py-6 md:px-6 md:py-8">
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">
+                        Geofence Status
+                    </h1>
 
-                        <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-400">
-                            Se om dina enheter är inom eller utanför sina
-                            tillåtna arbetsområden i realtid.
-                        </p>
+                    <p className="mt-2 max-w-2xl text-base text-slate-600 dark:text-slate-400">
+                        Se om dina enheter är inom eller utanför sina tillåtna
+                        arbetsområden i realtid.
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        {socketStatus === "connected" ? (
+                            <>
+                                <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <span className="text-blue-700 dark:text-blue-300">
+                                    Live connected
+                                </span>
+                            </>
+                        ) : socketStatus === "connecting" ? (
+                            <>
+                                <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <span className="text-blue-700 dark:text-blue-300">
+                                    Ansluter live...
+                                </span>
+                            </>
+                        ) : (
+                            <>
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                                <span className="text-red-500">
+                                    Live disconnected
+                                </span>
+                            </>
+                        )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            {socketStatus === "connected" ? (
-                                <>
-                                    <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                    <span className="text-blue-700 dark:text-blue-300">
-                                        Live connected
-                                    </span>
-                                </>
-                            ) : socketStatus === "connecting" ? (
-                                <>
-                                    <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                    <span className="text-blue-700 dark:text-blue-300">
-                                        Ansluter live...
-                                    </span>
-                                </>
-                            ) : (
-                                <>
-                                    <WifiOff className="h-4 w-4 text-red-500" />
-                                    <span className="text-red-500">
-                                        Live disconnected
-                                    </span>
-                                </>
-                            )}
+                    {lastLiveUpdate && (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                            Senaste live-update:{" "}
+                            <span className="font-semibold">
+                                {lastLiveUpdate}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {error && (
+                <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                </div>
+            )}
+
+            <div className="grid gap-5 lg:grid-cols-[420px_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-2xl bg-blue-500/10 p-3">
+                            <Radar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
 
-                        {lastLiveUpdate && (
-                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                                Senaste live-update:{" "}
-                                <span className="font-semibold">
-                                    {lastLiveUpdate}
-                                </span>
-                            </div>
+                        <div>
+                            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+                                Senaste status
+                            </h2>
+
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                {loading
+                                    ? "Laddar..."
+                                    : `${latestRows.length} geofence-status`}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 max-h-[calc(100dvh-360px)] min-h-[360px] space-y-3 overflow-y-auto pr-1">
+                        {loading ? (
+                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                Hämtar geofence-data...
+                            </p>
+                        ) : latestRows.length === 0 ? (
+                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                Ingen geofence-data hittades.
+                            </p>
+                        ) : (
+                            latestRows.map((row, index) => {
+                                const isOutside =
+                                    row.geofence_status === "outside";
+
+                                const distanceToBorder =
+                                    Number(row.area_location_radius_m) -
+                                    Number(row.distance_m);
+
+                                return (
+                                    <div
+                                        key={`${getGeofenceRowKey(row)}-${index}`}
+                                        className={`rounded-xl border p-4 text-sm ${getStatusCardClass(
+                                            row.geofence_status,
+                                        )}`}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <div className="rounded-xl bg-white/70 p-2 dark:bg-slate-950/40">
+                                                {isOutside ? (
+                                                    <AlertCircle className="h-5 w-5" />
+                                                ) : (
+                                                    <CheckCircle2 className="h-5 w-5" />
+                                                )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold">
+                                                    Device {row.device_ID}
+                                                </p>
+
+                                                <p className="mt-1">
+                                                    Status:{" "}
+                                                    <span className="font-semibold">
+                                                        {getStatusText(
+                                                            row.geofence_status,
+                                                        )}
+                                                    </span>
+                                                </p>
+
+                                                <p>
+                                                    Avstånd från centrum:{" "}
+                                                    <span className="font-semibold">
+                                                        {row.distance_m} m
+                                                    </span>
+                                                </p>
+
+                                                {isOutside ? (
+                                                    <p>
+                                                        Utanför gränsen:{" "}
+                                                        <span className="font-semibold">
+                                                            {row.outside_by_m} m
+                                                        </span>
+                                                    </p>
+                                                ) : (
+                                                    <p>
+                                                        Kvar till gräns:{" "}
+                                                        <span className="font-semibold">
+                                                            {Math.max(
+                                                                0,
+                                                                distanceToBorder,
+                                                            )}{" "}
+                                                            m
+                                                        </span>
+                                                    </p>
+                                                )}
+
+                                                <p>
+                                                    Tillåten radie:{" "}
+                                                    <span className="font-semibold">
+                                                        {
+                                                            row.area_location_radius_m
+                                                        }{" "}
+                                                        m
+                                                    </span>
+                                                </p>
+
+                                                <p>
+                                                    Accuracy:{" "}
+                                                    <span className="font-semibold">
+                                                        {row.acc} m
+                                                    </span>
+                                                </p>
+
+                                                <p className="mt-2 text-xs opacity-80">
+                                                    Tid: {row.data_timestamp}
+                                                </p>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        loadAlertHistory(
+                                                            row.device_ID,
+                                                        )
+                                                    }
+                                                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-current/20 bg-white/60 px-3 py-2 text-xs font-semibold transition hover:bg-white/90 dark:bg-slate-950/30 dark:hover:bg-slate-950/50"
+                                                >
+                                                    <History className="h-4 w-4" />
+                                                    Visa alert-historik
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
                         )}
                     </div>
                 </div>
 
-                {error && (
-                    <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
-                        {error}
-                    </div>
-                )}
+                <div className="relative z-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                    <div className="relative z-0 h-[calc(100dvh-270px)] min-h-[560px] w-full">
+                        <MapContainer
+                            center={[59.3293, 18.0686]}
+                            zoom={9}
+                            className="z-0 h-full w-full"
+                        >
+                            <ResizeMap />
 
-                <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-2xl bg-blue-500/10 p-3">
-                                <Radar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                            </div>
+                            <TileLayer
+                                attribution="&copy; OpenStreetMap contributors"
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
 
-                            <div>
-                                <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                                    Senaste status
-                                </h2>
+                            <FitMapToGeofences rows={latestRows} />
 
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    {loading
-                                        ? "Laddar..."
-                                        : `${latestRows.length} geofence-status`}
-                                </p>
-                            </div>
-                        </div>
+                            {latestRows.map((row, index) => {
+                                const deviceLat = Number(row.device_now_lat);
+                                const deviceLon = Number(row.device_now_lon);
+                                const areaLat = Number(row.area_location_lat);
+                                const areaLon = Number(row.area_location_lon);
+                                const radiusMeters = Number(
+                                    row.area_location_radius_m,
+                                );
 
-                        <div className="mt-5 space-y-3">
-                            {loading ? (
-                                <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Hämtar geofence-data...
-                                </p>
-                            ) : latestRows.length === 0 ? (
-                                <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Ingen geofence-data hittades.
-                                </p>
-                            ) : (
-                                latestRows.map((row, index) => {
-                                    const isOutside =
-                                        row.geofence_status === "outside";
+                                if (
+                                    !Number.isFinite(deviceLat) ||
+                                    !Number.isFinite(deviceLon) ||
+                                    !Number.isFinite(areaLat) ||
+                                    !Number.isFinite(areaLon)
+                                ) {
+                                    return null;
+                                }
 
-                                    const distanceToBorder =
-                                        Number(row.area_location_radius_m) -
-                                        Number(row.distance_m);
+                                const color = getStatusColor(
+                                    row.geofence_status,
+                                );
 
-                                    return (
-                                        <div
-                                            key={`${getGeofenceRowKey(row)}-${index}`}
-                                            className={`rounded-xl border p-4 text-sm ${getStatusCardClass(
-                                                row.geofence_status,
-                                            )}`}
+                                return (
+                                    <Fragment
+                                        key={`${getGeofenceRowKey(row)}-${index}`}
+                                    >
+                                        <Circle
+                                            center={[areaLat, areaLon]}
+                                            radius={radiusMeters || 100}
+                                            pathOptions={{
+                                                color,
+                                                fillColor: color,
+                                                fillOpacity: 0.16,
+                                                opacity: 0.95,
+                                                weight: 3,
+                                            }}
                                         >
-                                            <div className="flex items-start gap-3">
-                                                <div className="rounded-xl bg-white/70 p-2 dark:bg-slate-950/40">
-                                                    {isOutside ? (
-                                                        <AlertCircle className="h-5 w-5" />
-                                                    ) : (
-                                                        <CheckCircle2 className="h-5 w-5" />
-                                                    )}
-                                                </div>
+                                            <Popup>
+                                                <div>
+                                                    <p className="font-medium">
+                                                        Tillåtet område
+                                                    </p>
 
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="font-semibold">
+                                                    {row.matchedAddress && (
+                                                        <p>
+                                                            {row.matchedAddress}
+                                                        </p>
+                                                    )}
+
+                                                    <p>
+                                                        Device: {row.device_ID}
+                                                    </p>
+
+                                                    <p>
+                                                        Radie: {radiusMeters} m
+                                                    </p>
+
+                                                    <p>
+                                                        Status:{" "}
+                                                        {getStatusText(
+                                                            row.geofence_status,
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            </Popup>
+                                        </Circle>
+
+                                        <Marker
+                                            position={[deviceLat, deviceLon]}
+                                        >
+                                            <Popup>
+                                                <div>
+                                                    <p className="font-medium">
                                                         Device {row.device_ID}
                                                     </p>
 
-                                                    <p className="mt-1">
+                                                    <p>
                                                         Status:{" "}
-                                                        <span className="font-semibold">
-                                                            {getStatusText(
-                                                                row.geofence_status,
-                                                            )}
-                                                        </span>
+                                                        {getStatusText(
+                                                            row.geofence_status,
+                                                        )}
                                                     </p>
 
                                                     <p>
                                                         Avstånd från centrum:{" "}
-                                                        <span className="font-semibold">
-                                                            {row.distance_m} m
-                                                        </span>
+                                                        {row.distance_m} m
                                                     </p>
 
-                                                    {isOutside ? (
+                                                    {row.geofence_status ===
+                                                        "outside" && (
                                                         <p>
                                                             Utanför gränsen:{" "}
-                                                            <span className="font-semibold">
-                                                                {
-                                                                    row.outside_by_m
-                                                                }{" "}
-                                                                m
-                                                            </span>
-                                                        </p>
-                                                    ) : (
-                                                        <p>
-                                                            Kvar till gräns:{" "}
-                                                            <span className="font-semibold">
-                                                                {Math.max(
-                                                                    0,
-                                                                    distanceToBorder,
-                                                                )}{" "}
-                                                                m
-                                                            </span>
+                                                            {row.outside_by_m} m
                                                         </p>
                                                     )}
 
-                                                    <p>
-                                                        Tillåten radie:{" "}
-                                                        <span className="font-semibold">
-                                                            {
-                                                                row.area_location_radius_m
-                                                            }{" "}
+                                                    {row.geofence_status ===
+                                                        "inside" && (
+                                                        <p>
+                                                            Kvar till gräns:{" "}
+                                                            {Math.max(
+                                                                0,
+                                                                radiusMeters -
+                                                                    Number(
+                                                                        row.distance_m,
+                                                                    ),
+                                                            )}{" "}
                                                             m
-                                                        </span>
-                                                    </p>
+                                                        </p>
+                                                    )}
+
+                                                    <p>Accuracy: {row.acc} m</p>
 
                                                     <p>
-                                                        Accuracy:{" "}
-                                                        <span className="font-semibold">
-                                                            {row.acc} m
-                                                        </span>
-                                                    </p>
-
-                                                    <p className="mt-2 text-xs opacity-80">
                                                         Tid:{" "}
                                                         {row.data_timestamp}
                                                     </p>
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            loadAlertHistory(
-                                                                row.device_ID,
-                                                            )
-                                                        }
-                                                        className="mt-3 inline-flex items-center gap-2 rounded-xl border border-current/20 bg-white/60 px-3 py-2 text-xs font-semibold transition hover:bg-white/90 dark:bg-slate-950/30 dark:hover:bg-slate-950/50"
-                                                    >
-                                                        <History className="h-4 w-4" />
-                                                        Visa alert-historik
-                                                    </button>
                                                 </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
+                                            </Popup>
+                                        </Marker>
 
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                        <div className="h-[720px] w-full">
-                            <MapContainer
-                                center={[59.3293, 18.0686]}
-                                zoom={9}
-                                className="h-full w-full"
-                            >
-                                <TileLayer
-                                    attribution="&copy; OpenStreetMap contributors"
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                />
-
-                                <FitMapToGeofences rows={latestRows} />
-
-                                {latestRows.map((row, index) => {
-                                    const deviceLat = Number(
-                                        row.device_now_lat,
-                                    );
-                                    const deviceLon = Number(
-                                        row.device_now_lon,
-                                    );
-                                    const areaLat = Number(
-                                        row.area_location_lat,
-                                    );
-                                    const areaLon = Number(
-                                        row.area_location_lon,
-                                    );
-                                    const radiusMeters = Number(
-                                        row.area_location_radius_m,
-                                    );
-
-                                    if (
-                                        !Number.isFinite(deviceLat) ||
-                                        !Number.isFinite(deviceLon) ||
-                                        !Number.isFinite(areaLat) ||
-                                        !Number.isFinite(areaLon)
-                                    ) {
-                                        return null;
-                                    }
-
-                                    const color = getStatusColor(
-                                        row.geofence_status,
-                                    );
-
-                                    return (
-                                        <Fragment
-                                            key={`${getGeofenceRowKey(row)}-${index}`}
-                                        >
-                                            <Circle
-                                                center={[areaLat, areaLon]}
-                                                radius={radiusMeters || 100}
-                                                pathOptions={{
-                                                    color,
-                                                    fillColor: color,
-                                                    fillOpacity: 0.16,
-                                                    opacity: 0.95,
-                                                    weight: 3,
-                                                }}
-                                            >
-                                                <Popup>
-                                                    <div>
-                                                        <p className="font-medium">
-                                                            Tillåtet område
-                                                        </p>
-
-                                                        {row.matchedAddress && (
-                                                            <p>
-                                                                {
-                                                                    row.matchedAddress
-                                                                }
-                                                            </p>
-                                                        )}
-
-                                                        <p>
-                                                            Device:{" "}
-                                                            {row.device_ID}
-                                                        </p>
-
-                                                        <p>
-                                                            Radie:{" "}
-                                                            {radiusMeters} m
-                                                        </p>
-
-                                                        <p>
-                                                            Status:{" "}
-                                                            {getStatusText(
-                                                                row.geofence_status,
-                                                            )}
-                                                        </p>
-                                                    </div>
-                                                </Popup>
-                                            </Circle>
-
-                                            <Marker
-                                                position={[
-                                                    deviceLat,
-                                                    deviceLon,
-                                                ]}
-                                            >
-                                                <Popup>
-                                                    <div>
-                                                        <p className="font-medium">
-                                                            Device{" "}
-                                                            {row.device_ID}
-                                                        </p>
-
-                                                        <p>
-                                                            Status:{" "}
-                                                            {getStatusText(
-                                                                row.geofence_status,
-                                                            )}
-                                                        </p>
-
-                                                        <p>
-                                                            Avstånd från
-                                                            centrum:{" "}
-                                                            {row.distance_m} m
-                                                        </p>
-
-                                                        {row.geofence_status ===
-                                                            "outside" && (
-                                                            <p>
-                                                                Utanför gränsen:{" "}
-                                                                {
-                                                                    row.outside_by_m
-                                                                }{" "}
-                                                                m
-                                                            </p>
-                                                        )}
-
-                                                        {row.geofence_status ===
-                                                            "inside" && (
-                                                            <p>
-                                                                Kvar till gräns:{" "}
-                                                                {Math.max(
-                                                                    0,
-                                                                    radiusMeters -
-                                                                        Number(
-                                                                            row.distance_m,
-                                                                        ),
-                                                                )}{" "}
-                                                                m
-                                                            </p>
-                                                        )}
-
-                                                        <p>
-                                                            Accuracy: {row.acc}{" "}
-                                                            m
-                                                        </p>
-
-                                                        <p>
-                                                            Tid:{" "}
-                                                            {row.data_timestamp}
-                                                        </p>
-                                                    </div>
-                                                </Popup>
-                                            </Marker>
-
-                                            <Polyline
-                                                positions={[
-                                                    [areaLat, areaLon],
-                                                    [deviceLat, deviceLon],
-                                                ]}
-                                                pathOptions={{
-                                                    color,
-                                                    weight: 3,
-                                                    dashArray: "8 8",
-                                                    opacity: 0.8,
-                                                }}
-                                            />
-                                        </Fragment>
-                                    );
-                                })}
-                            </MapContainer>
-                        </div>
+                                        <Polyline
+                                            positions={[
+                                                [areaLat, areaLon],
+                                                [deviceLat, deviceLon],
+                                            ]}
+                                            pathOptions={{
+                                                color,
+                                                weight: 3,
+                                                dashArray: "8 8",
+                                                opacity: 0.8,
+                                            }}
+                                        />
+                                    </Fragment>
+                                );
+                            })}
+                        </MapContainer>
                     </div>
                 </div>
+            </div>
 
-                <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 md:grid-cols-3">
-                    <div>
-                        <span className="font-semibold text-slate-950 dark:text-white">
-                            Blå marker:
-                        </span>{" "}
-                        device-position
-                    </div>
-
-                    <div>
-                        <span className="font-semibold text-slate-950 dark:text-white">
-                            Transparent cirkel:
-                        </span>{" "}
-                        tillåten geofence-zon
-                    </div>
-
-                    <div>
-                        <span className="font-semibold text-slate-950 dark:text-white">
-                            Streckad linje:
-                        </span>{" "}
-                        avstånd från zonens centrum till device
-                    </div>
+            <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 md:grid-cols-3">
+                <div>
+                    <span className="font-semibold text-slate-950 dark:text-white">
+                        Blå marker:
+                    </span>{" "}
+                    device-position
                 </div>
-            </section>
+
+                <div>
+                    <span className="font-semibold text-slate-950 dark:text-white">
+                        Transparent cirkel:
+                    </span>{" "}
+                    tillåten geofence-zon
+                </div>
+
+                <div>
+                    <span className="font-semibold text-slate-950 dark:text-white">
+                        Streckad linje:
+                    </span>{" "}
+                    avstånd från zonens centrum till device
+                </div>
+            </div>
 
             {alertHistoryOpen && (
                 <>
@@ -737,10 +741,10 @@ export default function GeofenceDashboard() {
                         type="button"
                         aria-label="Stäng alert-historik"
                         onClick={closeAlertHistory}
-                        className="fixed inset-0 z-[80] bg-slate-950/30 backdrop-blur-[1px]"
+                        className="fixed inset-0 z-[9000] bg-slate-950/40 backdrop-blur-[2px]"
                     />
 
-                    <aside className="fixed right-0 top-0 z-[90] flex h-dvh w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:right-4 sm:top-4 sm:h-[calc(100dvh-2rem)] sm:rounded-3xl sm:border">
+                    <aside className="fixed right-0 top-0 z-[9010] flex h-dvh w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:right-4 sm:top-4 sm:h-[calc(100dvh-2rem)] sm:rounded-3xl sm:border">
                         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <div>
                                 <p className="text-lg font-bold text-slate-950 dark:text-white">
@@ -840,6 +844,6 @@ export default function GeofenceDashboard() {
                     </aside>
                 </>
             )}
-        </main>
+        </section>
     );
 }
