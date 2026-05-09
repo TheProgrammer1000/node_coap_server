@@ -13,8 +13,8 @@ console.log(
     Boolean(process.env.GEOAPIFY_API_KEY),
 );
 
-import { startApiServer } from "./api/api_server.js";
-import { startCoapServer } from "./coap/coap_server.js";
+const { startApiServer } = await import("./api/api_server.js");
+const { startCoapServer } = await import("./coap/coap_server.js");
 
 startApiServer();
 startCoapServer();

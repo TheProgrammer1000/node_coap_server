@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "private": true,
     "type": "module",
-    "main": "dist/server.js",
+    "main": "dist/app.js",
     "scripts": {
         "dev": "tsx watch src/app.ts",
         "api": "tsx watch src/api/api_server.ts",
