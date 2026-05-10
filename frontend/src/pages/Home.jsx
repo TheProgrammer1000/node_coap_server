@@ -86,40 +86,35 @@ function getDeviceStatus(point) {
     const lastSeen = getDeviceLastSeen(point);
     const ageMs = getAgeMs(lastSeen);
 
+    if (ageMs === null) {
+        return "unknown";
+    }
+
+    if (ageMs <= ONLINE_THRESHOLD_MS) {
+        return "online";
+    }
+
+    return "offline";
+}
+
+function hasWeakAccuracy(point) {
     const acc =
         point?.acc === null || point?.acc === undefined
             ? null
             : Number(point.acc);
 
-    if (ageMs === null) {
-        return "unknown";
-    }
-
-    if (ageMs > ONLINE_THRESHOLD_MS) {
-        return "offline";
-    }
-
-    if (acc !== null && !Number.isNaN(acc) && acc > WEAK_ACCURACY_THRESHOLD) {
-        return "weak";
-    }
-
-    return "online";
+    return acc !== null && !Number.isNaN(acc) && acc > WEAK_ACCURACY_THRESHOLD;
 }
 
 function getStatusLabel(status) {
     if (status === "online") return "Online";
     if (status === "offline") return "Offline";
-    if (status === "weak") return "Svag accuracy";
     return "Okänd";
 }
 
 function getStatusClasses(status) {
     if (status === "online") {
         return "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-800";
-    }
-
-    if (status === "weak") {
-        return "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:ring-orange-800";
     }
 
     if (status === "offline") {
@@ -129,11 +124,14 @@ function getStatusClasses(status) {
     return "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700";
 }
 
+function getAccuracyWarningClasses() {
+    return "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:ring-orange-800";
+}
+
 function getMarkerIcon(status, selected) {
     let color = "#64748b";
 
     if (status === "online") color = "#2563eb";
-    if (status === "weak") color = "#f97316";
     if (status === "offline") color = "#64748b";
 
     const size = selected ? 24 : 18;
@@ -483,8 +481,8 @@ export default function Home() {
             (device) => getDeviceStatus(device) === "offline",
         ).length;
 
-        const weakAccuracy = sortedDevices.filter(
-            (device) => getDeviceStatus(device) === "weak",
+        const weakAccuracy = sortedDevices.filter((device) =>
+            hasWeakAccuracy(device),
         ).length;
 
         const latestTimestamp = getLatestLastSeen(sortedDevices);
@@ -855,6 +853,8 @@ export default function Home() {
                                                 getDeviceName(device);
                                             const status =
                                                 getDeviceStatus(device);
+                                            const weakAccuracy =
+                                                hasWeakAccuracy(device);
                                             const lastSeen =
                                                 getDeviceLastSeen(device);
                                             const isSelected =
@@ -867,7 +867,7 @@ export default function Home() {
 
                                             return (
                                                 <button
-                                                    key={`${deviceId}-${lastSeen ?? device.data_timestamp ?? "no-time"}`}
+                                                    key={`${deviceId ?? "device"}`}
                                                     type="button"
                                                     onClick={() =>
                                                         setSelectedDeviceId(
@@ -908,15 +908,26 @@ export default function Home() {
                                                                     </p>
                                                                 </div>
 
-                                                                <span
-                                                                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
-                                                                        status,
-                                                                    )}`}
-                                                                >
-                                                                    {getStatusLabel(
-                                                                        status,
+                                                                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                                                    <span
+                                                                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
+                                                                            status,
+                                                                        )}`}
+                                                                    >
+                                                                        {getStatusLabel(
+                                                                            status,
+                                                                        )}
+                                                                    </span>
+
+                                                                    {weakAccuracy && (
+                                                                        <span
+                                                                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getAccuracyWarningClasses()}`}
+                                                                        >
+                                                                            Svag
+                                                                            accuracy
+                                                                        </span>
                                                                     )}
-                                                                </span>
+                                                                </div>
                                                             </div>
 
                                                             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -1021,6 +1032,8 @@ export default function Home() {
                                         const deviceName =
                                             getDeviceName(device);
                                         const status = getDeviceStatus(device);
+                                        const weakAccuracy =
+                                            hasWeakAccuracy(device);
                                         const lastSeen =
                                             getDeviceLastSeen(device);
                                         const isSelected =
@@ -1040,7 +1053,7 @@ export default function Home() {
 
                                         return (
                                             <Fragment
-                                                key={`${deviceId ?? "device"}-${device.data_timestamp ?? lastSeen ?? index}`}
+                                                key={`${deviceId ?? "device"}-${index}`}
                                             >
                                                 <Marker
                                                     position={[lat, lon]}
@@ -1082,6 +1095,14 @@ export default function Home() {
                                                                         )}
                                                                     </span>
                                                                 </div>
+
+                                                                {weakAccuracy && (
+                                                                    <div className="rounded-md bg-orange-50 px-2 py-1 font-semibold text-orange-700">
+                                                                        Svag
+                                                                        GNSS
+                                                                        accuracy
+                                                                    </div>
+                                                                )}
 
                                                                 <div className="flex justify-between gap-2 rounded-md bg-blue-50 px-2 py-1">
                                                                     <span className="font-medium text-blue-700">
@@ -1137,17 +1158,14 @@ export default function Home() {
                                                                 250,
                                                             )}
                                                             pathOptions={{
-                                                                color:
-                                                                    status ===
-                                                                    "weak"
-                                                                        ? "#f97316"
-                                                                        : status ===
-                                                                            "offline"
-                                                                          ? "#64748b"
-                                                                          : "#2563eb",
+                                                                color: weakAccuracy
+                                                                    ? "#f97316"
+                                                                    : status ===
+                                                                        "offline"
+                                                                      ? "#64748b"
+                                                                      : "#2563eb",
                                                                 fillColor:
-                                                                    status ===
-                                                                    "weak"
+                                                                    weakAccuracy
                                                                         ? "#fb923c"
                                                                         : status ===
                                                                             "offline"
@@ -1185,9 +1203,9 @@ export default function Home() {
 
                 <p>
                     <span className="font-bold text-slate-950 dark:text-white">
-                        Cirkel:
+                        Orange cirkel:
                     </span>{" "}
-                    GNSS accuracy-radie
+                    svag GNSS accuracy
                 </p>
             </div>
         </section>
