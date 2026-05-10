@@ -35,11 +35,20 @@ L.Icon.Default.mergeOptions({
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+const ONLINE_THRESHOLD_MS = 7 * 60 * 1000;
 const WEAK_ACCURACY_THRESHOLD = 50;
 
 function getPointDeviceId(point) {
     return point?.device_ID ?? point?.device_id ?? null;
+}
+
+function getDeviceLastSeen(device) {
+    return (
+        device?.last_seen ??
+        device?.lastSeen ??
+        device?.device_status_last_seen ??
+        null
+    );
 }
 
 function getDeviceName(device) {
@@ -74,25 +83,27 @@ function getAgeMs(timestamp) {
 }
 
 function getDeviceStatus(point) {
-    const ageMs = getAgeMs(point?.data_timestamp);
+    const lastSeen = getDeviceLastSeen(point);
+    const ageMs = getAgeMs(lastSeen);
+
     const acc =
         point?.acc === null || point?.acc === undefined
             ? null
             : Number(point.acc);
 
-    if (acc !== null && !Number.isNaN(acc) && acc > WEAK_ACCURACY_THRESHOLD) {
-        return "weak";
-    }
-
     if (ageMs === null) {
         return "unknown";
     }
 
-    if (ageMs <= ONLINE_THRESHOLD_MS) {
-        return "online";
+    if (ageMs > ONLINE_THRESHOLD_MS) {
+        return "offline";
     }
 
-    return "offline";
+    if (acc !== null && !Number.isNaN(acc) && acc > WEAK_ACCURACY_THRESHOLD) {
+        return "weak";
+    }
+
+    return "online";
 }
 
 function getStatusLabel(status) {
@@ -196,20 +207,106 @@ function normalizeGnssResponse(result) {
     return [];
 }
 
+function normalizeDeviceStatusResponse(result) {
+    if (Array.isArray(result) && Array.isArray(result[0])) {
+        return result[0];
+    }
+
+    if (Array.isArray(result)) {
+        return result;
+    }
+
+    const data = result?.data;
+
+    if (Array.isArray(data) && Array.isArray(data[0])) {
+        return data[0];
+    }
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    return [];
+}
+
+function getSortTimestamp(device) {
+    return (
+        getDeviceLastSeen(device) ??
+        device?.data_timestamp ??
+        device?.created_at ??
+        null
+    );
+}
+
 function sortByNewest(points) {
     return [...points].sort((a, b) => {
-        const aTime = parseTimestamp(a.data_timestamp)?.getTime() ?? 0;
-        const bTime = parseTimestamp(b.data_timestamp)?.getTime() ?? 0;
+        const aTime = parseTimestamp(getSortTimestamp(a))?.getTime() ?? 0;
+        const bTime = parseTimestamp(getSortTimestamp(b))?.getTime() ?? 0;
 
         return bTime - aTime;
     });
 }
 
+function mergeDeviceStatuses(devices, statuses) {
+    const statusByDeviceId = new Map();
+
+    statuses.forEach((statusRow) => {
+        const deviceId = getPointDeviceId(statusRow);
+
+        if (!deviceId) return;
+
+        statusByDeviceId.set(String(deviceId), statusRow);
+    });
+
+    const existingDeviceIds = new Set();
+
+    const mergedDevices = devices.map((device) => {
+        const deviceId = getPointDeviceId(device);
+
+        if (!deviceId) {
+            return device;
+        }
+
+        existingDeviceIds.add(String(deviceId));
+
+        const statusRow = statusByDeviceId.get(String(deviceId));
+
+        if (!statusRow) {
+            return device;
+        }
+
+        return {
+            ...device,
+            last_seen: statusRow.last_seen ?? device.last_seen ?? null,
+        };
+    });
+
+    statuses.forEach((statusRow) => {
+        const deviceId = getPointDeviceId(statusRow);
+
+        if (!deviceId || existingDeviceIds.has(String(deviceId))) {
+            return;
+        }
+
+        mergedDevices.push({
+            device_ID: deviceId,
+            last_seen: statusRow.last_seen ?? null,
+        });
+    });
+
+    return mergedDevices;
+}
+
 function upsertLatestDevicePosition(previousPoints, newPoint) {
     const deviceId = getPointDeviceId(newPoint);
 
+    const pointWithLastSeen = {
+        ...newPoint,
+        last_seen: newPoint.last_seen ?? new Date().toISOString(),
+    };
+
     if (!deviceId) {
-        return sortByNewest([newPoint, ...previousPoints]);
+        return sortByNewest([pointWithLastSeen, ...previousPoints]);
     }
 
     const existingPoint = previousPoints.find(
@@ -218,7 +315,7 @@ function upsertLatestDevicePosition(previousPoints, newPoint) {
 
     const mergedPoint = {
         ...(existingPoint ?? {}),
-        ...newPoint,
+        ...pointWithLastSeen,
     };
 
     const filteredPoints = previousPoints.filter(
@@ -226,6 +323,53 @@ function upsertLatestDevicePosition(previousPoints, newPoint) {
     );
 
     return sortByNewest([mergedPoint, ...filteredPoints]);
+}
+
+function upsertDeviceStatus(previousDevices, statusUpdate) {
+    const deviceId = getPointDeviceId(statusUpdate);
+
+    if (!deviceId) {
+        return previousDevices;
+    }
+
+    const lastSeen = statusUpdate.last_seen ?? new Date().toISOString();
+
+    let foundDevice = false;
+
+    const updatedDevices = previousDevices.map((device) => {
+        if (String(getPointDeviceId(device)) !== String(deviceId)) {
+            return device;
+        }
+
+        foundDevice = true;
+
+        return {
+            ...device,
+            last_seen: lastSeen,
+        };
+    });
+
+    if (foundDevice) {
+        return sortByNewest(updatedDevices);
+    }
+
+    return sortByNewest([
+        {
+            device_ID: Number(deviceId),
+            last_seen: lastSeen,
+        },
+        ...previousDevices,
+    ]);
+}
+
+function getLatestLastSeen(devices) {
+    return devices.reduce((latestTimestamp, device) => {
+        const timestamp = getDeviceLastSeen(device);
+        const time = parseTimestamp(timestamp)?.getTime() ?? 0;
+        const latestTime = parseTimestamp(latestTimestamp)?.getTime() ?? 0;
+
+        return time > latestTime ? timestamp : latestTimestamp;
+    }, null);
 }
 
 function ResizeMap() {
@@ -310,6 +454,7 @@ export default function Home() {
 
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
+    const [nowTick, setNowTick] = useState(Date.now());
 
     const sortedDevices = useMemo(() => sortByNewest(devices), [devices]);
 
@@ -342,7 +487,7 @@ export default function Home() {
             (device) => getDeviceStatus(device) === "weak",
         ).length;
 
-        const latestTimestamp = sortedDevices[0]?.data_timestamp ?? null;
+        const latestTimestamp = getLatestLastSeen(sortedDevices);
 
         return {
             total,
@@ -351,9 +496,9 @@ export default function Home() {
             weakAccuracy,
             latestTimestamp,
         };
-    }, [sortedDevices]);
+    }, [sortedDevices, nowTick]);
 
-    async function loadGnssData() {
+    async function loadDashboardData() {
         if (!userId) {
             setLoading(false);
             return;
@@ -362,29 +507,36 @@ export default function Home() {
         try {
             setLoading(true);
 
-            const response = await axios.get(`/api/device/gnss/user/${userId}`);
-            const result = response.data;
+            const [gnssResponse, statusResponse] = await Promise.all([
+                axios.get(`/api/device/gnss/user/${userId}`),
+                axios.get(`/api/device/get/status/${userId}`),
+            ]);
 
-            const rows = normalizeGnssResponse(result);
+            const gnssResult = gnssResponse.data;
+            const gnssRows =
+                gnssResult.success === false
+                    ? []
+                    : normalizeGnssResponse(gnssResult);
 
-            if (result.success !== false) {
-                const sortedRows = sortByNewest(rows);
+            const statusRows = normalizeDeviceStatusResponse(
+                statusResponse.data,
+            );
 
-                setDevices(sortedRows);
-                setSelectedDeviceId((currentSelectedId) => {
-                    if (currentSelectedId) return currentSelectedId;
+            const mergedRows = mergeDeviceStatuses(gnssRows, statusRows);
+            const sortedRows = sortByNewest(mergedRows);
 
-                    return getPointDeviceId(sortedRows[0]) ?? null;
-                });
-                setErrorMessage("");
-            } else {
-                setDevices([]);
-                setSelectedDeviceId(null);
-                setErrorMessage("");
-            }
+            setDevices(sortedRows);
+
+            setSelectedDeviceId((currentSelectedId) => {
+                if (currentSelectedId) return currentSelectedId;
+
+                return getPointDeviceId(sortedRows[0]) ?? null;
+            });
+
+            setErrorMessage("");
         } catch (error) {
-            console.error("Failed to load GNSS data:", error);
-            setErrorMessage("Failed to load GNSS data");
+            console.error("Failed to load dashboard data:", error);
+            setErrorMessage("Failed to load device data");
         } finally {
             setLoading(false);
         }
@@ -396,8 +548,18 @@ export default function Home() {
             return;
         }
 
-        loadGnssData();
+        loadDashboardData();
     }, [userId]);
+
+    useEffect(() => {
+        const interval = window.setInterval(() => {
+            setNowTick(Date.now());
+        }, 15000);
+
+        return () => {
+            window.clearInterval(interval);
+        };
+    }, []);
 
     useEffect(() => {
         if (!userId) {
@@ -456,11 +618,27 @@ export default function Home() {
             );
         }
 
+        function handleDeviceStatus(statusUpdate) {
+            console.log("Live device status:", statusUpdate);
+
+            setDevices((previousDevices) =>
+                upsertDeviceStatus(previousDevices, statusUpdate),
+            );
+
+            setLastLiveUpdate(
+                new Date().toLocaleTimeString("sv-SE", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                }),
+            );
+        }
+
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
         socket.on("socket:joined", handleJoined);
         socket.on("gnss:new-position", handleNewPosition);
+        socket.on("device:status", handleDeviceStatus);
 
         if (!socket.connected) {
             socket.connect();
@@ -476,6 +654,7 @@ export default function Home() {
             socket.off("connect_error", handleConnectError);
             socket.off("socket:joined", handleJoined);
             socket.off("gnss:new-position", handleNewPosition);
+            socket.off("device:status", handleDeviceStatus);
 
             socket.disconnect();
             setSocketStatus("disconnected");
@@ -591,14 +770,14 @@ export default function Home() {
                                         <div className="flex items-center gap-2 text-sm">
                                             <Clock3 className="h-4 w-4 text-slate-500" />
                                             <span className="font-semibold">
-                                                Senaste data:
+                                                Senaste heartbeat:
                                             </span>
                                             <span className="text-slate-600 dark:text-slate-400">
                                                 {dashboardStats.latestTimestamp
                                                     ? formatAge(
                                                           dashboardStats.latestTimestamp,
                                                       )
-                                                    : "Ingen data ännu"}
+                                                    : "Ingen status ännu"}
                                             </span>
                                         </div>
 
@@ -623,7 +802,8 @@ export default function Home() {
                                         </h2>
 
                                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                            Senaste kända position per enhet.
+                                            Senaste kända status och position
+                                            per enhet.
                                         </p>
                                     </div>
 
@@ -675,6 +855,8 @@ export default function Home() {
                                                 getDeviceName(device);
                                             const status =
                                                 getDeviceStatus(device);
+                                            const lastSeen =
+                                                getDeviceLastSeen(device);
                                             const isSelected =
                                                 String(deviceId) ===
                                                 String(
@@ -685,7 +867,7 @@ export default function Home() {
 
                                             return (
                                                 <button
-                                                    key={`${deviceId}-${device.data_timestamp}`}
+                                                    key={`${deviceId}-${lastSeen ?? device.data_timestamp ?? "no-time"}`}
                                                     type="button"
                                                     onClick={() =>
                                                         setSelectedDeviceId(
@@ -719,8 +901,9 @@ export default function Home() {
                                                                     </p>
 
                                                                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                                        Status:{" "}
                                                                         {formatAge(
-                                                                            device.data_timestamp,
+                                                                            lastSeen,
                                                                         )}
                                                                     </p>
                                                                 </div>
@@ -752,11 +935,12 @@ export default function Home() {
                                                                 <div className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">
                                                                     <p className="text-slate-500 dark:text-slate-400">
                                                                         Senast
+                                                                        status
                                                                     </p>
 
                                                                     <p className="truncate font-bold">
                                                                         {formatTimestamp(
-                                                                            device.data_timestamp,
+                                                                            lastSeen,
                                                                         )}
                                                                     </p>
                                                                 </div>
@@ -837,6 +1021,8 @@ export default function Home() {
                                         const deviceName =
                                             getDeviceName(device);
                                         const status = getDeviceStatus(device);
+                                        const lastSeen =
+                                            getDeviceLastSeen(device);
                                         const isSelected =
                                             String(deviceId) ===
                                             String(
@@ -854,7 +1040,7 @@ export default function Home() {
 
                                         return (
                                             <Fragment
-                                                key={`${deviceId ?? "device"}-${device.data_timestamp ?? index}`}
+                                                key={`${deviceId ?? "device"}-${device.data_timestamp ?? lastSeen ?? index}`}
                                             >
                                                 <Marker
                                                     position={[lat, lon]}
@@ -911,8 +1097,21 @@ export default function Home() {
 
                                                                 <div className="pt-1">
                                                                     <p className="text-[10px] text-slate-500">
-                                                                        Last
-                                                                        update
+                                                                        Senaste
+                                                                        status
+                                                                    </p>
+
+                                                                    <p className="text-[11px] font-semibold">
+                                                                        {formatTimestamp(
+                                                                            lastSeen,
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="pt-1">
+                                                                    <p className="text-[10px] text-slate-500">
+                                                                        Senaste
+                                                                        GNSS
                                                                     </p>
 
                                                                     <p className="text-[11px] font-semibold">
@@ -942,12 +1141,18 @@ export default function Home() {
                                                                     status ===
                                                                     "weak"
                                                                         ? "#f97316"
-                                                                        : "#2563eb",
+                                                                        : status ===
+                                                                            "offline"
+                                                                          ? "#64748b"
+                                                                          : "#2563eb",
                                                                 fillColor:
                                                                     status ===
                                                                     "weak"
                                                                         ? "#fb923c"
-                                                                        : "#3b82f6",
+                                                                        : status ===
+                                                                            "offline"
+                                                                          ? "#94a3b8"
+                                                                          : "#3b82f6",
                                                                 fillOpacity: 0.12,
                                                                 weight: 1,
                                                             }}

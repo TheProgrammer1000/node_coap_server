@@ -80,6 +80,28 @@ export async function sendLiveGeofenceAlert(
     console.log(`Emitted geofence:alert to ${roomName}`);
 }
 
+export async function sendLiveDeviceStatus(
+    userId: string | number,
+    status: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit live geofence alert");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("device_last_seen:", status);
+
+    io.to(roomName).emit("device:status", status);
+
+    console.log(`Emitted device:status to ${roomName}`);
+}
+
 export function startApiServer() {
     const app = express();
 

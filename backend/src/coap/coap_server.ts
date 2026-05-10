@@ -4,23 +4,21 @@ import {
     sendLiveGnssPosition,
     sendLiveGeofencePosition,
     sendLiveGeofenceAlert,
+    sendLiveDeviceStatus,
 } from "../api/api_server.js";
 import {
     get_device_arealocation,
     add_device_zone_state,
     get_last_device_zone_state,
     add_device_zone_alert,
+    add_device_status,
+    get_userID_by_deviceID,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
 
 export function startCoapServer() {
     const server = createServer((req, res) => {
         console.log("CoAP request:", req.method, req.url);
-
-        if (req.method === "GET") {
-            res.code = "2.05";
-            return res.end("Hello world!");
-        }
 
         if (req.url === "/sensor_data/gps" && req.method === "POST") {
             let body = "";
@@ -314,10 +312,81 @@ export function startCoapServer() {
             });
 
             return;
-        }
+        } else if (req.url === "/device/status" && req.method === "POST") {
+            let body = "";
 
-        res.code = "4.04";
-        return res.end("Not found");
+            req.on("data", (chunk) => {
+                body += chunk.toString();
+            });
+
+            req.on("end", async () => {
+                try {
+                    res.setOption("Content-Format", "text/plain");
+
+                    if (!body) {
+                        res.code = "4.00";
+                        return res.end("Missing request body");
+                    }
+
+                    const sensorData = JSON.parse(body);
+                    console.log("sensorData: ", sensorData);
+
+                    if (!sensorData?.device_ID) {
+                        console.error("");
+                        res.code = "4.01";
+                        return res.end("Error with status property");
+                    }
+
+                    try {
+                        const response = await add_device_status(
+                            sensorData.device_ID,
+                        );
+
+                        console.log("response: ", response);
+
+                        const [data] = await get_userID_by_deviceID(
+                            sensorData.device_ID,
+                        );
+                        const user_ID = data[0].user_ID;
+
+                        const lastSeen = new Date().toISOString();
+
+                        const deviceStatusPayload = {
+                            device_ID: Number(sensorData.device_ID),
+                            status: "online",
+                            last_seen: lastSeen,
+                        };
+
+                        if (!user_ID) {
+                            console.warn(
+                                `No user found for device_ID ${sensorData.device_ID}. Status saved but not sent live.`,
+                            );
+
+                            res.code = "2.04";
+                            return res.end("Device status saved");
+                        }
+
+                        await sendLiveDeviceStatus(
+                            user_ID,
+                            deviceStatusPayload,
+                        );
+
+                        console.log(
+                            "Live device status sent:",
+                            deviceStatusPayload,
+                        );
+
+                        res.code = "2.00";
+                        return res.end(`Successfully got device status!`);
+                    } catch (error) {
+                        console.error("Failed to call db procedur");
+                    }
+                } catch (err) {
+                    res.code = "5.00";
+                    return res.end(`Server error ${err}`);
+                }
+            });
+        }
     });
 
     const host = process.env.COAP_HOST_NAME ?? "127.0.0.1";

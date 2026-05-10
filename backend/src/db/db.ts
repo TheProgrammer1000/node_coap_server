@@ -197,3 +197,32 @@ export async function get_all_device_zone_alert(device_ID: number) {
 
     return result;
 }
+
+export async function add_device_status(device_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_status(?);",
+        [device_ID],
+    );
+
+    console.log(result);
+    return result;
+}
+
+export async function get_userID_by_deviceID(device_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_userID_by_deviceID(?);",
+        [device_ID],
+    );
+
+    console.log(result);
+    return result;
+}
+
+export async function get_user_devices_status(user_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_user_devices_status(?);",
+        [user_ID],
+    );
+
+    return result[0];
+}

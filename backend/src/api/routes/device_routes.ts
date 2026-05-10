@@ -9,6 +9,7 @@ import {
     add_device_arealocation,
     get_user_arealocations,
     get_gnss_data_for_arealocation,
+    get_user_devices_status,
 } from "../../db/db.js";
 
 import { device_param, work_area_payload } from "../../types.js";
@@ -207,6 +208,31 @@ router.get("/get/gnss/arealocation/:user_ID", async (req, res) => {
     } catch (err) {
         console.log(err);
         res.json({ success: false, msg: err });
+    }
+});
+
+router.get("/get/status/:user_ID", async (req, res) => {
+    try {
+        const user_ID = Number(req.params.user_ID);
+
+        const data = await get_user_devices_status(user_ID);
+
+        if (data.length > 0) {
+            console.log(data);
+            res.json({ success: true, data });
+        } else {
+            res.json({
+                success: false,
+                msg: "no devices register to user and cannot get device status",
+            });
+        }
+    } catch (error) {
+        console.error("Failed to get device status:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to get device status",
+        });
     }
 });
 
