@@ -229,3 +229,12 @@ export async function get_user_devices_status(user_ID: number) {
 
     return result[0];
 }
+
+export async function get_device_user_by_userID(user_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_device_user_by_userID(?);",
+        [user_ID],
+    );
+
+    return result[0];
+}

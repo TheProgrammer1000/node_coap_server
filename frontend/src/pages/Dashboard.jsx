@@ -46,6 +46,13 @@ function getPointDeviceId(point) {
     return point?.device_ID ?? point?.device_id ?? null;
 }
 
+function hasValidPosition(device) {
+    const lat = Number(device?.lat);
+    const lon = Number(device?.lon);
+
+    return Number.isFinite(lat) && Number.isFinite(lon);
+}
+
 function getDeviceLastSeen(device) {
     return (
         device?.last_seen ??
@@ -69,7 +76,11 @@ function getDeviceName(device) {
 function parseTimestamp(timestamp) {
     if (!timestamp) return null;
 
-    const date = new Date(timestamp);
+    const normalized = String(timestamp).includes("T")
+        ? String(timestamp)
+        : String(timestamp).replace(" ", "T");
+
+    const date = new Date(normalized);
 
     if (Number.isNaN(date.getTime())) {
         return null;
@@ -256,6 +267,48 @@ function normalizeGnssResponse(result) {
     return [];
 }
 
+function normalizeRegisteredDevicesResponse(result) {
+    if (!result) return [];
+
+    if (Array.isArray(result) && Array.isArray(result[0])) {
+        return result[0];
+    }
+
+    if (Array.isArray(result)) {
+        return result;
+    }
+
+    const data = result?.data;
+
+    if (Array.isArray(data) && Array.isArray(data[0])) {
+        return data[0];
+    }
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    if (result.device_ID || result.device_id) {
+        return [
+            {
+                device_ID: result.device_ID ?? result.device_id,
+                device_name: result.device_name ?? result.deviceName ?? null,
+            },
+        ];
+    }
+
+    if (data?.device_ID || data?.device_id) {
+        return [
+            {
+                device_ID: data.device_ID ?? data.device_id,
+                device_name: data.device_name ?? data.deviceName ?? null,
+            },
+        ];
+    }
+
+    return [];
+}
+
 function normalizeDeviceStatusResponse(result) {
     if (Array.isArray(result) && Array.isArray(result[0])) {
         return result[0];
@@ -362,57 +415,56 @@ function upsertDeviceHistoryPoint(previousHistory, newPoint) {
     };
 }
 
-function mergeDeviceStatuses(devices, statuses) {
-    const statusByDeviceId = new Map();
+function mergeRegisteredDevicesWithTelemetry(
+    registeredDevices,
+    gnssRows,
+    statusRows,
+) {
+    const deviceMap = new Map();
 
-    statuses.forEach((statusRow) => {
-        const deviceId = getPointDeviceId(statusRow);
+    function upsert(row) {
+        const deviceId = getPointDeviceId(row);
 
         if (!deviceId) return;
 
-        statusByDeviceId.set(String(deviceId), statusRow);
-    });
+        const key = String(deviceId);
+        const existing = deviceMap.get(key) ?? {};
 
-    const existingDeviceIds = new Set();
-
-    const mergedDevices = devices.map((device) => {
-        const deviceId = getPointDeviceId(device);
-
-        if (!deviceId) {
-            return device;
-        }
-
-        existingDeviceIds.add(String(deviceId));
-
-        const statusRow = statusByDeviceId.get(String(deviceId));
-
-        if (!statusRow) {
-            return device;
-        }
-
-        return {
-            ...device,
-            last_seen: statusRow.last_seen ?? device.last_seen ?? null,
-        };
-    });
-
-    statuses.forEach((statusRow) => {
-        const deviceId = getPointDeviceId(statusRow);
-
-        if (!deviceId || existingDeviceIds.has(String(deviceId))) {
-            return;
-        }
-
-        mergedDevices.push({
-            device_ID: deviceId,
-            last_seen: statusRow.last_seen ?? null,
+        deviceMap.set(key, {
+            ...existing,
+            ...row,
+            device_ID:
+                existing.device_ID ??
+                row.device_ID ??
+                row.device_id ??
+                Number(deviceId),
+            device_name:
+                row.device_name ??
+                row.deviceName ??
+                row.name ??
+                existing.device_name ??
+                existing.deviceName ??
+                existing.name ??
+                null,
+            last_seen:
+                row.last_seen ??
+                row.lastSeen ??
+                row.device_status_last_seen ??
+                existing.last_seen ??
+                existing.lastSeen ??
+                existing.device_status_last_seen ??
+                null,
         });
-    });
+    }
 
-    return mergedDevices;
+    registeredDevices.forEach(upsert);
+    gnssRows.forEach(upsert);
+    statusRows.forEach(upsert);
+
+    return Array.from(deviceMap.values());
 }
 
-function upsertLatestDevicePosition(previousPoints, newPoint) {
+function upsertLatestDevicePosition(previousDevices, newPoint) {
     const deviceId = getPointDeviceId(newPoint);
 
     const pointWithLastSeen = {
@@ -425,23 +477,34 @@ function upsertLatestDevicePosition(previousPoints, newPoint) {
     };
 
     if (!deviceId) {
-        return sortByNewest([pointWithLastSeen, ...previousPoints]);
+        return sortByNewest([pointWithLastSeen, ...previousDevices]);
     }
 
-    const existingPoint = previousPoints.find(
-        (point) => String(getPointDeviceId(point)) === String(deviceId),
+    const existingDevice = previousDevices.find(
+        (device) => String(getPointDeviceId(device)) === String(deviceId),
     );
 
-    const mergedPoint = {
-        ...(existingPoint ?? {}),
+    const mergedDevice = {
+        ...(existingDevice ?? {}),
         ...pointWithLastSeen,
+        device_ID:
+            existingDevice?.device_ID ??
+            pointWithLastSeen.device_ID ??
+            pointWithLastSeen.device_id ??
+            Number(deviceId),
+        device_name:
+            existingDevice?.device_name ??
+            pointWithLastSeen.device_name ??
+            pointWithLastSeen.deviceName ??
+            pointWithLastSeen.name ??
+            null,
     };
 
-    const filteredPoints = previousPoints.filter(
-        (point) => String(getPointDeviceId(point)) !== String(deviceId),
+    const filteredDevices = previousDevices.filter(
+        (device) => String(getPointDeviceId(device)) !== String(deviceId),
     );
 
-    return sortByNewest([mergedPoint, ...filteredPoints]);
+    return sortByNewest([mergedDevice, ...filteredDevices]);
 }
 
 function upsertDeviceStatus(previousDevices, statusUpdate) {
@@ -528,7 +591,7 @@ function FitMapToDevices({ devices }) {
                 const lat = Number(device.lat);
                 const lon = Number(device.lon);
 
-                if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
                     return null;
                 }
 
@@ -579,6 +642,10 @@ export default function Dashboard() {
 
     const sortedDevices = useMemo(() => sortByNewest(devices), [devices]);
 
+    const positionedDevices = useMemo(() => {
+        return sortedDevices.filter((device) => hasValidPosition(device));
+    }, [sortedDevices]);
+
     const selectedDevice = useMemo(() => {
         if (!selectedDeviceId) return sortedDevices[0] ?? null;
 
@@ -607,7 +674,7 @@ export default function Dashboard() {
                 const lat = Number(point.lat);
                 const lon = Number(point.lon);
 
-                if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
                     return null;
                 }
 
@@ -628,6 +695,10 @@ export default function Dashboard() {
             (device) => getDeviceStatus(device) === "offline",
         ).length;
 
+        const unknown = sortedDevices.filter(
+            (device) => getDeviceStatus(device) === "unknown",
+        ).length;
+
         const weakAccuracy = sortedDevices.filter((device) =>
             hasWeakAccuracy(device),
         ).length;
@@ -638,10 +709,13 @@ export default function Dashboard() {
             total,
             online,
             offline,
+            unknown,
             weakAccuracy,
+            positioned: positionedDevices.length,
+            waitingForGnss: total - positionedDevices.length,
             latestTimestamp,
         };
-    }, [sortedDevices, nowTick]);
+    }, [sortedDevices, positionedDevices, nowTick]);
 
     function selectDevice(deviceId) {
         setSelectedDeviceId(deviceId);
@@ -657,31 +731,54 @@ export default function Dashboard() {
         try {
             setLoading(true);
 
-            const [gnssResponse, statusResponse, historyResponse] =
-                await Promise.all([
-                    axios.get(`/api/device/gnss/user/${userId}`),
-                    axios.get(`/api/device/get/status/${userId}`),
-                    axios.get(`/api/device/gnss/user/history/${userId}`),
-                ]);
+            const [
+                registeredResponse,
+                gnssResponse,
+                statusResponse,
+                historyResponse,
+            ] = await Promise.allSettled([
+                axios.get(`/api/device/user/${userId}`),
+                axios.get(`/api/device/gnss/user/${userId}`),
+                axios.get(`/api/device/get/status/${userId}`),
+                axios.get(`/api/device/gnss/user/history/${userId}`),
+            ]);
 
-            const gnssResult = gnssResponse.data;
+            const registeredRows =
+                registeredResponse.status === "fulfilled"
+                    ? normalizeRegisteredDevicesResponse(
+                          registeredResponse.value.data,
+                      )
+                    : [];
+
+            const gnssResult =
+                gnssResponse.status === "fulfilled"
+                    ? gnssResponse.value.data
+                    : null;
+
             const gnssRows =
-                gnssResult.success === false
+                gnssResult?.success === false
                     ? []
                     : normalizeGnssResponse(gnssResult);
 
-            const statusRows = normalizeDeviceStatusResponse(
-                statusResponse.data,
-            );
+            const statusRows =
+                statusResponse.status === "fulfilled"
+                    ? normalizeDeviceStatusResponse(statusResponse.value.data)
+                    : [];
 
             const historyRows =
-                historyResponse.data?.success === false
-                    ? []
-                    : normalizeUserHistoryResponse(historyResponse.data);
+                historyResponse.status === "fulfilled" &&
+                historyResponse.value.data?.success !== false
+                    ? normalizeUserHistoryResponse(historyResponse.value.data)
+                    : [];
 
             setDeviceHistoryById(groupHistoryByDevice(historyRows));
 
-            const mergedRows = mergeDeviceStatuses(gnssRows, statusRows);
+            const mergedRows = mergeRegisteredDevicesWithTelemetry(
+                registeredRows,
+                gnssRows,
+                statusRows,
+            );
+
             const sortedRows = sortByNewest(mergedRows);
 
             setDevices(sortedRows);
@@ -824,21 +921,30 @@ export default function Dashboard() {
         };
     }, [userId]);
 
-    const hasDevices = sortedDevices.length > 0;
+    const hasRegisteredDevices = sortedDevices.length > 0;
+    const hasPositionedDevices = positionedDevices.length > 0;
+
     const selectedStatus = selectedDevice
         ? getDeviceStatus(selectedDevice)
         : "unknown";
+
     const selectedLastSeen = selectedDevice
         ? getDeviceLastSeen(selectedDevice)
         : null;
+
     const selectedWeakAccuracy = selectedDevice
         ? hasWeakAccuracy(selectedDevice)
+        : false;
+
+    const selectedHasPosition = selectedDevice
+        ? hasValidPosition(selectedDevice)
         : false;
 
     const selectedHistoryCount = selectedDeviceHistory.length;
     const hasSelectedHistory = selectedHistoryCount > 0;
     const canShowRoute = showHistory && selectedHistoryPositions.length >= 2;
     const selectedHistoryText = formatPositionCount(selectedHistoryCount);
+
     const historyButtonLabel = getHistoryButtonLabel(
         showHistory,
         selectedHistoryCount,
@@ -853,9 +959,9 @@ export default function Dashboard() {
                     </h1>
 
                     <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400 md:text-base">
-                        Se var dina devices senast rapporterade sin position.
-                        Välj en device för att se mer information eller visa
-                        dess rörelsehistorik när det behövs.
+                        Se var dina devices senast rapporterade sin position. En
+                        registrerad device visas även innan första
+                        GNSS-positionen finns.
                     </p>
                 </div>
 
@@ -939,10 +1045,10 @@ export default function Dashboard() {
 
                                     <div className="rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
                                         <p className="text-slate-500 dark:text-slate-400">
-                                            Svag acc.
+                                            GNSS
                                         </p>
                                         <p className="mt-1 text-lg font-bold">
-                                            {dashboardStats.weakAccuracy}
+                                            {dashboardStats.positioned}
                                         </p>
                                     </div>
                                 </div>
@@ -963,9 +1069,11 @@ export default function Dashboard() {
                                     </div>
 
                                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                        {lastLiveUpdate
-                                            ? `Senaste live-update ${lastLiveUpdate}`
-                                            : "Väntar på live-data från Socket.IO"}
+                                        {dashboardStats.waitingForGnss > 0
+                                            ? `${dashboardStats.waitingForGnss} device väntar på första GNSS-position.`
+                                            : lastLiveUpdate
+                                              ? `Senaste live-update ${lastLiveUpdate}`
+                                              : "Väntar på live-data från Socket.IO"}
                                     </p>
                                 </div>
                             </div>
@@ -978,23 +1086,23 @@ export default function Dashboard() {
                         {loading ? (
                             <div className="flex h-[420px] items-center justify-center sm:h-[520px] lg:h-[calc(100dvh-230px)] lg:min-h-[650px]">
                                 <p className="text-slate-500">
-                                    Laddar GPS-data...
+                                    Laddar device-data...
                                 </p>
                             </div>
-                        ) : !hasDevices ? (
+                        ) : !hasRegisteredDevices ? (
                             <div className="flex h-[420px] flex-col items-center justify-center px-6 text-center sm:h-[520px] lg:h-[calc(100dvh-230px)] lg:min-h-[650px]">
                                 <div className="mb-4 rounded-2xl bg-slate-100 p-4 dark:bg-slate-800">
                                     <MapPinned className="h-8 w-8 text-slate-500" />
                                 </div>
 
                                 <h3 className="text-xl font-bold">
-                                    Kartan är redo
+                                    Ingen device registrerad
                                 </h3>
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
-                                    När du registrerar en device och den skickar
-                                    GNSS-positioner via CoAP kommer senaste
-                                    positionen visas här i realtid.
+                                    Lägg till en device först. När den sedan
+                                    skickar GNSS-positioner via CoAP visas den
+                                    på kartan.
                                 </p>
 
                                 <button
@@ -1006,6 +1114,60 @@ export default function Dashboard() {
                                     Lägg till device
                                     <ArrowRight className="h-4 w-4" />
                                 </button>
+                            </div>
+                        ) : !hasPositionedDevices ? (
+                            <div className="flex h-[420px] flex-col items-center justify-center px-6 text-center sm:h-[520px] lg:h-[calc(100dvh-230px)] lg:min-h-[650px]">
+                                <div className="mb-4 rounded-2xl bg-blue-50 p-4 dark:bg-blue-950/40">
+                                    <Smartphone className="h-8 w-8 text-blue-600 dark:text-blue-300" />
+                                </div>
+
+                                <h3 className="text-xl font-bold">
+                                    Device registrerad
+                                </h3>
+
+                                <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
+                                    Du har registrerade devices, men ingen har
+                                    skickat GNSS-position ännu. Kartan visar
+                                    positionen när första GNSS-paketet tas emot
+                                    via CoAP.
+                                </p>
+
+                                <div className="mt-5 w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left dark:border-slate-800 dark:bg-slate-950">
+                                    <p className="text-sm font-bold">
+                                        Registrerade devices
+                                    </p>
+
+                                    <div className="mt-3 space-y-2">
+                                        {sortedDevices.map((device) => {
+                                            const deviceId =
+                                                getPointDeviceId(device);
+
+                                            return (
+                                                <div
+                                                    key={String(deviceId)}
+                                                    className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm dark:bg-slate-900"
+                                                >
+                                                    <div>
+                                                        <p className="font-semibold">
+                                                            {getDeviceName(
+                                                                device,
+                                                            )}
+                                                        </p>
+
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                            ID{" "}
+                                                            {deviceId ?? "N/A"}
+                                                        </p>
+                                                    </div>
+
+                                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                        Väntar på GNSS
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <div className="flex h-[500px] flex-col sm:h-[580px] lg:h-[calc(100dvh-230px)] lg:min-h-[650px]">
@@ -1031,6 +1193,12 @@ export default function Dashboard() {
                                                     )}
                                                 </span>
 
+                                                {!selectedHasPosition && (
+                                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                                                        Ingen GNSS-position
+                                                    </span>
+                                                )}
+
                                                 {selectedWeakAccuracy && (
                                                     <span
                                                         className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getAccuracyWarningClasses()}`}
@@ -1041,14 +1209,15 @@ export default function Dashboard() {
                                             </div>
 
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                Kartan visar device:ns senaste
-                                                kända position. Senast sedd{" "}
-                                                {selectedLastSeen
-                                                    ? formatAge(
-                                                          selectedLastSeen,
-                                                      )
-                                                    : "okänd tid"}
-                                                .
+                                                {selectedHasPosition
+                                                    ? `Kartan visar device:ns senaste kända position. Senast sedd ${
+                                                          selectedLastSeen
+                                                              ? formatAge(
+                                                                    selectedLastSeen,
+                                                                )
+                                                              : "okänd tid"
+                                                      }.`
+                                                    : "Den valda devicen är registrerad men har ingen GNSS-position ännu."}
                                             </p>
 
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -1078,33 +1247,6 @@ export default function Dashboard() {
                                             </button>
                                         </div>
                                     </div>
-
-                                    {showHistory && hasSelectedHistory && (
-                                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                                            <span className="flex items-center gap-1.5">
-                                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
-                                                    1
-                                                </span>
-                                                Senaste historiska position
-                                            </span>
-
-                                            {selectedHistoryCount >= 2 && (
-                                                <>
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold text-white">
-                                                            2
-                                                        </span>
-                                                        Äldre positioner
-                                                    </span>
-
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span className="h-1 w-8 rounded-full bg-blue-600" />
-                                                        Rörelse mellan punkterna
-                                                    </span>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className="min-h-0 flex-1">
@@ -1122,7 +1264,7 @@ export default function Dashboard() {
                                         />
 
                                         <FitMapToDevices
-                                            devices={sortedDevices}
+                                            devices={positionedDevices}
                                         />
 
                                         {canShowRoute && (
@@ -1138,162 +1280,164 @@ export default function Dashboard() {
                                             />
                                         )}
 
-                                        {sortedDevices.map((device, index) => {
-                                            const lat = Number(device.lat);
-                                            const lon = Number(device.lon);
-                                            const acc =
-                                                device.acc === null ||
-                                                device.acc === undefined
-                                                    ? null
-                                                    : Number(device.acc);
-                                            const deviceId =
-                                                getPointDeviceId(device);
-                                            const deviceName =
-                                                getDeviceName(device);
-                                            const status =
-                                                getDeviceStatus(device);
-                                            const weakAccuracy =
-                                                hasWeakAccuracy(device);
-                                            const lastSeen =
-                                                getDeviceLastSeen(device);
-                                            const isSelected =
-                                                String(deviceId) ===
-                                                String(
-                                                    getPointDeviceId(
-                                                        selectedDevice,
-                                                    ),
-                                                );
+                                        {positionedDevices.map(
+                                            (device, index) => {
+                                                const lat = Number(device.lat);
+                                                const lon = Number(device.lon);
+                                                const acc =
+                                                    device.acc === null ||
+                                                    device.acc === undefined
+                                                        ? null
+                                                        : Number(device.acc);
+                                                const deviceId =
+                                                    getPointDeviceId(device);
+                                                const deviceName =
+                                                    getDeviceName(device);
+                                                const status =
+                                                    getDeviceStatus(device);
+                                                const weakAccuracy =
+                                                    hasWeakAccuracy(device);
+                                                const lastSeen =
+                                                    getDeviceLastSeen(device);
+                                                const isSelected =
+                                                    String(deviceId) ===
+                                                    String(
+                                                        getPointDeviceId(
+                                                            selectedDevice,
+                                                        ),
+                                                    );
 
-                                            if (
-                                                Number.isNaN(lat) ||
-                                                Number.isNaN(lon)
-                                            ) {
-                                                return null;
-                                            }
-
-                                            return (
-                                                <Fragment
-                                                    key={`${deviceId ?? "device"}-${index}`}
-                                                >
-                                                    {acc !== null &&
-                                                        !Number.isNaN(acc) && (
-                                                            <Circle
-                                                                center={[
-                                                                    lat,
-                                                                    lon,
-                                                                ]}
-                                                                radius={Math.min(
-                                                                    Math.max(
-                                                                        acc,
-                                                                        3,
-                                                                    ),
-                                                                    250,
-                                                                )}
-                                                                pathOptions={{
-                                                                    color: weakAccuracy
-                                                                        ? "#f97316"
-                                                                        : status ===
-                                                                            "offline"
-                                                                          ? "#64748b"
-                                                                          : "#2563eb",
-                                                                    fillColor:
-                                                                        weakAccuracy
-                                                                            ? "#fb923c"
+                                                return (
+                                                    <Fragment
+                                                        key={`${deviceId ?? "device"}-${index}`}
+                                                    >
+                                                        {acc !== null &&
+                                                            !Number.isNaN(
+                                                                acc,
+                                                            ) && (
+                                                                <Circle
+                                                                    center={[
+                                                                        lat,
+                                                                        lon,
+                                                                    ]}
+                                                                    radius={Math.min(
+                                                                        Math.max(
+                                                                            acc,
+                                                                            3,
+                                                                        ),
+                                                                        250,
+                                                                    )}
+                                                                    pathOptions={{
+                                                                        color: weakAccuracy
+                                                                            ? "#f97316"
                                                                             : status ===
                                                                                 "offline"
-                                                                              ? "#94a3b8"
-                                                                              : "#3b82f6",
-                                                                    fillOpacity: 0.12,
-                                                                    weight: 1,
-                                                                }}
-                                                            />
-                                                        )}
+                                                                              ? "#64748b"
+                                                                              : "#2563eb",
+                                                                        fillColor:
+                                                                            weakAccuracy
+                                                                                ? "#fb923c"
+                                                                                : status ===
+                                                                                    "offline"
+                                                                                  ? "#94a3b8"
+                                                                                  : "#3b82f6",
+                                                                        fillOpacity: 0.12,
+                                                                        weight: 1,
+                                                                    }}
+                                                                />
+                                                            )}
 
-                                                    <Marker
-                                                        position={[lat, lon]}
-                                                        icon={getMarkerIcon(
-                                                            status,
-                                                            isSelected,
-                                                        )}
-                                                        eventHandlers={{
-                                                            click: () =>
-                                                                selectDevice(
-                                                                    deviceId,
-                                                                ),
-                                                        }}
-                                                    >
-                                                        <Popup
-                                                            maxWidth={240}
-                                                            minWidth={190}
+                                                        <Marker
+                                                            position={[
+                                                                lat,
+                                                                lon,
+                                                            ]}
+                                                            icon={getMarkerIcon(
+                                                                status,
+                                                                isSelected,
+                                                            )}
+                                                            eventHandlers={{
+                                                                click: () =>
+                                                                    selectDevice(
+                                                                        deviceId,
+                                                                    ),
+                                                            }}
                                                         >
-                                                            <div className="text-xs leading-tight text-slate-950">
-                                                                <p className="text-sm font-bold">
-                                                                    {deviceName}
-                                                                </p>
+                                                            <Popup
+                                                                maxWidth={240}
+                                                                minWidth={190}
+                                                            >
+                                                                <div className="text-xs leading-tight text-slate-950">
+                                                                    <p className="text-sm font-bold">
+                                                                        {
+                                                                            deviceName
+                                                                        }
+                                                                    </p>
 
-                                                                <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
-                                                                    ID{" "}
-                                                                    {deviceId ??
-                                                                        "N/A"}
-                                                                </p>
+                                                                    <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
+                                                                        ID{" "}
+                                                                        {deviceId ??
+                                                                            "N/A"}
+                                                                    </p>
 
-                                                                <div className="space-y-1.5">
-                                                                    <div className="flex justify-between gap-2">
-                                                                        <span className="text-slate-500">
-                                                                            Status
-                                                                        </span>
+                                                                    <div className="space-y-1.5">
+                                                                        <div className="flex justify-between gap-2">
+                                                                            <span className="text-slate-500">
+                                                                                Status
+                                                                            </span>
 
-                                                                        <span className="font-semibold">
-                                                                            {getStatusLabel(
-                                                                                status,
-                                                                            )}
-                                                                        </span>
-                                                                    </div>
+                                                                            <span className="font-semibold">
+                                                                                {getStatusLabel(
+                                                                                    status,
+                                                                                )}
+                                                                            </span>
+                                                                        </div>
 
-                                                                    <div className="flex justify-between gap-2 rounded-md bg-blue-50 px-2 py-1">
-                                                                        <span className="font-medium text-blue-700">
-                                                                            Accuracy
-                                                                        </span>
+                                                                        <div className="flex justify-between gap-2 rounded-md bg-blue-50 px-2 py-1">
+                                                                            <span className="font-medium text-blue-700">
+                                                                                Accuracy
+                                                                            </span>
 
-                                                                        <span className="font-bold text-blue-700">
-                                                                            {device.acc ??
-                                                                                "N/A"}{" "}
-                                                                            m
-                                                                        </span>
-                                                                    </div>
+                                                                            <span className="font-bold text-blue-700">
+                                                                                {device.acc ??
+                                                                                    "N/A"}{" "}
+                                                                                m
+                                                                            </span>
+                                                                        </div>
 
-                                                                    <div className="pt-1">
-                                                                        <p className="text-[10px] text-slate-500">
-                                                                            Senast
-                                                                            sedd
-                                                                        </p>
+                                                                        <div className="pt-1">
+                                                                            <p className="text-[10px] text-slate-500">
+                                                                                Senast
+                                                                                sedd
+                                                                            </p>
 
-                                                                        <p className="text-[11px] font-semibold">
-                                                                            {formatTimestamp(
-                                                                                lastSeen,
-                                                                            )}
-                                                                        </p>
-                                                                    </div>
+                                                                            <p className="text-[11px] font-semibold">
+                                                                                {formatTimestamp(
+                                                                                    lastSeen,
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
 
-                                                                    <div className="pt-1">
-                                                                        <p className="text-[10px] text-slate-500">
-                                                                            Senaste
-                                                                            GNSS-position
-                                                                        </p>
+                                                                        <div className="pt-1">
+                                                                            <p className="text-[10px] text-slate-500">
+                                                                                Senaste
+                                                                                GNSS-position
+                                                                            </p>
 
-                                                                        <p className="text-[11px] font-semibold">
-                                                                            {formatTimestamp(
-                                                                                device.data_timestamp,
-                                                                            )}
-                                                                        </p>
+                                                                            <p className="text-[11px] font-semibold">
+                                                                                {formatTimestamp(
+                                                                                    device.data_timestamp,
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        </Popup>
-                                                    </Marker>
-                                                </Fragment>
-                                            );
-                                        })}
+                                                            </Popup>
+                                                        </Marker>
+                                                    </Fragment>
+                                                );
+                                            },
+                                        )}
 
                                         {showHistory &&
                                             selectedDeviceHistory.map(
@@ -1308,8 +1452,8 @@ export default function Dashboard() {
                                                         hasWeakAccuracy(point);
 
                                                     if (
-                                                        Number.isNaN(lat) ||
-                                                        Number.isNaN(lon)
+                                                        !Number.isFinite(lat) ||
+                                                        !Number.isFinite(lon)
                                                     ) {
                                                         return null;
                                                     }
@@ -1420,8 +1564,8 @@ export default function Dashboard() {
                                     </h2>
 
                                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                        Välj en device för att visa dess senaste
-                                        kända position på kartan.
+                                        Välj en device. Om den saknar GNSS-data
+                                        visas den som väntande.
                                     </p>
                                 </div>
 
@@ -1436,7 +1580,7 @@ export default function Dashboard() {
                                 <p className="px-2 py-6 text-center text-sm text-slate-500">
                                     Laddar devices...
                                 </p>
-                            ) : !hasDevices ? (
+                            ) : !hasRegisteredDevices ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center dark:border-slate-700 dark:bg-slate-950">
                                     <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-900">
                                         <Smartphone className="h-6 w-6 text-slate-500" />
@@ -1483,6 +1627,8 @@ export default function Dashboard() {
                                                     selectedDevice,
                                                 ),
                                             );
+                                        const hasPosition =
+                                            hasValidPosition(device);
 
                                         return (
                                             <button
@@ -1516,23 +1662,31 @@ export default function Dashboard() {
                                                                 </p>
 
                                                                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                                    Senast sedd:{" "}
-                                                                    {formatAge(
-                                                                        lastSeen,
-                                                                    )}
+                                                                    {hasPosition
+                                                                        ? `Senast sedd: ${formatAge(
+                                                                              lastSeen,
+                                                                          )}`
+                                                                        : "Registrerad, väntar på första GNSS-position"}
                                                                 </p>
                                                             </div>
 
                                                             <div className="flex shrink-0 flex-col items-end gap-1.5">
-                                                                <span
-                                                                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
-                                                                        status,
-                                                                    )}`}
-                                                                >
-                                                                    {getStatusLabel(
-                                                                        status,
-                                                                    )}
-                                                                </span>
+                                                                {hasPosition ? (
+                                                                    <span
+                                                                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
+                                                                            status,
+                                                                        )}`}
+                                                                    >
+                                                                        {getStatusLabel(
+                                                                            status,
+                                                                        )}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                                                                        Väntar
+                                                                        på GNSS
+                                                                    </span>
+                                                                )}
 
                                                                 {weakAccuracy && (
                                                                     <span
@@ -1613,11 +1767,13 @@ export default function Dashboard() {
 
                         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <p className="text-sm text-slate-600 dark:text-slate-300">
-                                Historiken visas bara när du väljer det. Då blir
-                                kartan enklare att läsa först.{" "}
+                                Historiken visas bara när devicen har skickat
+                                GNSS-positioner.{" "}
                                 {hasSelectedHistory
                                     ? `Den här devicen har ${selectedHistoryText}.`
-                                    : "Den här devicen har ingen sparad positionshistorik ännu."}
+                                    : selectedDevice
+                                      ? "Den här devicen har ingen sparad positionshistorik ännu."
+                                      : "Välj en device först."}
                             </p>
 
                             <button
@@ -1635,48 +1791,6 @@ export default function Dashboard() {
                                 <History className="h-4 w-4" />
                                 {historyButtonLabel}
                             </button>
-
-                            {showHistory && hasSelectedHistory && (
-                                <div className="mt-3 grid gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                    <div className="flex items-center gap-2">
-                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
-                                            1
-                                        </span>
-                                        <span>
-                                            Senaste position i historiken
-                                        </span>
-                                    </div>
-
-                                    {selectedHistoryCount >= 2 && (
-                                        <>
-                                            <div className="flex items-center gap-2">
-                                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold text-white">
-                                                    2
-                                                </span>
-                                                <span>
-                                                    Äldre positioner visas med
-                                                    högre nummer
-                                                </span>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <span className="h-1 w-8 rounded-full bg-blue-600" />
-                                                <span>
-                                                    Blå linje visar rörelsen
-                                                    mellan punkterna
-                                                </span>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {selectedHistoryCount === 1 && (
-                                        <div className="rounded-xl bg-slate-50 px-3 py-2 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                            Det finns bara en sparad position
-                                            än, så ingen ruttlinje visas.
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
 
                         {showHistory ? (
@@ -1790,12 +1904,9 @@ export default function Dashboard() {
                                             </span>{" "}
                                             för att se sparade positioner på
                                             kartan.
-                                            {selectedHistoryCount >= 2
-                                                ? " Eftersom det finns flera positioner visas även rörelsen mellan dem."
-                                                : " När fler positioner finns visas även en ruttlinje."}
                                         </>
                                     ) : (
-                                        "När devicen har skickat fler GNSS-positioner kommer historiken kunna visas här."
+                                        "När devicen har skickat GNSS-positioner kommer historiken kunna visas här."
                                     )}
                                 </div>
                             </div>
