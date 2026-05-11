@@ -1,7 +1,7 @@
 export interface user_type {
     show_username: string;
     username: string;
-    password_hash: string;
+    password: string;
 }
 
 export interface device_param {
