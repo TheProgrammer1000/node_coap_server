@@ -13,6 +13,35 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function normalizeLoginUser(responseData) {
+    const rawUser = Array.isArray(responseData?.data)
+        ? responseData.data[0]
+        : (responseData?.data ?? responseData?.user ?? null);
+
+    if (!rawUser) {
+        throw new Error("Kunde inte läsa användardata från servern");
+    }
+
+    const userId = rawUser.user_ID ?? rawUser.user_id ?? rawUser.id ?? null;
+
+    if (!userId) {
+        console.error("Login user saknar user_ID:", rawUser);
+
+        throw new Error(
+            "Servern skickade inte user_ID. Kontrollera login-responsen från backend.",
+        );
+    }
+
+    return {
+        user_ID: Number(userId),
+        show_username:
+            typeof rawUser.show_username === "string"
+                ? rawUser.show_username
+                : (rawUser.username ?? ""),
+        username: rawUser.username ?? "",
+    };
+}
+
 export default function Login() {
     const navigate = useNavigate();
 
@@ -55,6 +84,7 @@ export default function Login() {
 
     async function handleLogin(e) {
         e.preventDefault();
+
         setError("");
         setLoading(true);
 
@@ -65,7 +95,7 @@ export default function Login() {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    username,
+                    username: username.trim(),
                     password,
                 }),
             });
@@ -80,19 +110,18 @@ export default function Login() {
                 );
             }
 
-            const user = data.data?.[0];
+            const normalizedUser = normalizeLoginUser(data);
 
-            if (!user) {
-                throw new Error("Kunde inte läsa användardata från servern");
-            }
-
-            localStorage.setItem("token", String(user.user_ID));
-            localStorage.setItem("user", JSON.stringify(user));
+            localStorage.setItem("token", String(normalizedUser.user_ID));
+            localStorage.setItem("user", JSON.stringify(normalizedUser));
             localStorage.setItem("isLoggedIn", "true");
 
-            navigate("/home", { replace: true });
+            console.log("Logged in user:", normalizedUser);
+
+            navigate("/landing-page", { replace: true });
         } catch (err) {
-            setError(err.message);
+            console.error("Login failed:", err);
+            setError(err.message || "Kunde inte logga in");
         } finally {
             setLoading(false);
         }
@@ -131,6 +160,7 @@ export default function Login() {
                             <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
                                 nRF Cellular Dashboard
                             </h1>
+
                             <p className="text-sm text-slate-600 dark:text-slate-400">
                                 Live GPS tracking via CoAP
                             </p>
@@ -156,9 +186,11 @@ export default function Login() {
                         <div className="grid max-w-xl grid-cols-2 gap-4">
                             <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
                                 <MapPinned className="mb-4 h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+
                                 <p className="text-2xl font-bold text-slate-900 dark:text-white">
                                     Live
                                 </p>
+
                                 <p className="text-sm text-slate-600 dark:text-slate-400">
                                     GPS-positioner
                                 </p>
@@ -166,9 +198,11 @@ export default function Login() {
 
                             <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
                                 <Activity className="mb-4 h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+
                                 <p className="text-2xl font-bold text-slate-900 dark:text-white">
                                     CoAP
                                 </p>
+
                                 <p className="text-sm text-slate-600 dark:text-slate-400">
                                     Device ingestion
                                 </p>
@@ -207,6 +241,7 @@ export default function Login() {
                             <CardTitle className="text-2xl text-slate-900 dark:text-white">
                                 Logga in
                             </CardTitle>
+
                             <CardDescription className="text-slate-600 dark:text-slate-400">
                                 Öppna din IoT-dashboard och se senaste
                                 positionerna.
@@ -222,6 +257,7 @@ export default function Login() {
                                     >
                                         Användarnamn
                                     </Label>
+
                                     <Input
                                         id="username"
                                         type="text"
@@ -231,6 +267,7 @@ export default function Login() {
                                             setUsername(e.target.value)
                                         }
                                         required
+                                        autoComplete="username"
                                         className="border-slate-300 bg-white text-slate-950 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
                                     />
                                 </div>
@@ -242,6 +279,7 @@ export default function Login() {
                                     >
                                         Lösenord
                                     </Label>
+
                                     <Input
                                         id="password"
                                         type="password"
@@ -251,6 +289,7 @@ export default function Login() {
                                             setPassword(e.target.value)
                                         }
                                         required
+                                        autoComplete="current-password"
                                         className="border-slate-300 bg-white text-slate-950 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
                                     />
                                 </div>

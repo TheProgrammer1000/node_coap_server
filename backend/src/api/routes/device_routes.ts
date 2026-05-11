@@ -54,7 +54,32 @@ router.get("/gnss/user/:user_ID", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
 
-        const data = await get_user_devices_latest_positions(user_ID);
+        const data = await get_user_devices_latest_positions(user_ID, 1);
+
+        if (data.length > 0) {
+            console.log(data);
+            res.json({ success: true, data });
+        } else {
+            res.json({
+                success: false,
+                msg: "no devices register to user and cannot get device gnss",
+            });
+        }
+    } catch (error) {
+        console.error("Failed to get GNSS data by device:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to get GNSS data by device",
+        });
+    }
+});
+
+router.get("/gnss/user/history/:user_ID", async (req, res) => {
+    try {
+        const user_ID = Number(req.params.user_ID);
+
+        const data = await get_user_devices_latest_positions(user_ID, 5);
 
         if (data.length > 0) {
             console.log(data);

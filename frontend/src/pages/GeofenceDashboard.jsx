@@ -15,6 +15,7 @@ import {
     AlertCircle,
     CheckCircle2,
     History,
+    Info,
     Loader2,
     Radar,
     Wifi,
@@ -71,6 +72,13 @@ function getLatestGeofenceRows(rows) {
     }
 
     return Array.from(latestByDeviceArea.values());
+}
+
+function getAlertKey(alert) {
+    return String(
+        alert.id ??
+            `${alert.device_ID}-${alert.from_status}-${alert.to_status}-${alert.created_at}`,
+    );
 }
 
 function ResizeMap() {
@@ -198,6 +206,30 @@ function getAlertHistoryDistanceText(alert) {
     return `Avstånd: ${alert.device_area_distance_m ?? "N/A"} m`;
 }
 
+function getGeofenceSummary(rows) {
+    const insideCount = rows.filter(
+        (row) => row.geofence_status === "inside",
+    ).length;
+
+    const outsideCount = rows.filter(
+        (row) => row.geofence_status === "outside",
+    ).length;
+
+    const unknownCount = rows.length - insideCount - outsideCount;
+
+    const mostDeviatingRow = rows
+        .filter((row) => row.geofence_status === "outside")
+        .sort((a, b) => Number(b.outside_by_m) - Number(a.outside_by_m))[0];
+
+    return {
+        total: rows.length,
+        insideCount,
+        outsideCount,
+        unknownCount,
+        mostDeviatingRow,
+    };
+}
+
 export default function GeofenceDashboard() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -206,11 +238,20 @@ export default function GeofenceDashboard() {
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
 
+    const [helpOpen, setHelpOpen] = useState(false);
+
     const [alertHistoryOpen, setAlertHistoryOpen] = useState(false);
     const [alertHistoryLoading, setAlertHistoryLoading] = useState(false);
     const [alertHistoryError, setAlertHistoryError] = useState("");
     const [alertHistoryRows, setAlertHistoryRows] = useState([]);
     const [selectedAlertDeviceId, setSelectedAlertDeviceId] = useState(null);
+
+    const [explanationByAlertId, setExplanationByAlertId] = useState({});
+    const [explanationLoadingByAlertId, setExplanationLoadingByAlertId] =
+        useState({});
+    const [explanationErrorByAlertId, setExplanationErrorByAlertId] = useState(
+        {},
+    );
 
     const storedUser = localStorage.getItem("user");
     const user = storedUser ? JSON.parse(storedUser) : null;
@@ -219,6 +260,10 @@ export default function GeofenceDashboard() {
     const latestRows = useMemo(() => {
         return getLatestGeofenceRows(rows);
     }, [rows]);
+
+    const geofenceSummary = useMemo(() => {
+        return getGeofenceSummary(latestRows);
+    }, [latestRows]);
 
     async function loadGeofenceData() {
         if (!userId) {
@@ -266,6 +311,10 @@ export default function GeofenceDashboard() {
             setAlertHistoryError("");
             setAlertHistoryRows([]);
 
+            setExplanationByAlertId({});
+            setExplanationLoadingByAlertId({});
+            setExplanationErrorByAlertId({});
+
             const response = await axios.get(`/api/zone-alert/${device_ID}`);
             const result = response.data;
 
@@ -284,6 +333,60 @@ export default function GeofenceDashboard() {
             setAlertHistoryError("Kunde inte hämta alert-historik.");
         } finally {
             setAlertHistoryLoading(false);
+        }
+    }
+
+    async function explainAlert(alert) {
+        const alertKey = getAlertKey(alert);
+
+        setExplanationLoadingByAlertId((prev) => ({
+            ...prev,
+            [alertKey]: true,
+        }));
+
+        setExplanationErrorByAlertId((prev) => ({
+            ...prev,
+            [alertKey]: "",
+        }));
+
+        try {
+            const payload = {
+                id: alert.id,
+                device_ID: alert.device_ID ?? selectedAlertDeviceId,
+                from_status: alert.from_status,
+                to_status: alert.to_status,
+                device_area_distance_m: alert.device_area_distance_m,
+                created_at: alert.created_at,
+            };
+
+            const response = await axios.post("/api/ai/explain-alert", payload);
+            const result = response.data;
+
+            console.log("Explanation response:", result);
+
+            if (!result.success) {
+                throw new Error(result.error || "Kunde inte skapa förklaring.");
+            }
+
+            setExplanationByAlertId((prev) => ({
+                ...prev,
+                [alertKey]: result.explanation,
+            }));
+        } catch (err) {
+            console.error("Failed to explain alert:", err);
+
+            setExplanationErrorByAlertId((prev) => ({
+                ...prev,
+                [alertKey]:
+                    err.response?.data?.error ||
+                    err.message ||
+                    "Kunde inte skapa förklaring.",
+            }));
+        } finally {
+            setExplanationLoadingByAlertId((prev) => ({
+                ...prev,
+                [alertKey]: false,
+            }));
         }
     }
 
@@ -376,6 +479,15 @@ export default function GeofenceDashboard() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setHelpOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <Info className="h-4 w-4" />
+                        Förstå geofence
+                    </button>
+
                     <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         {socketStatus === "connected" ? (
                             <>
@@ -735,6 +847,127 @@ export default function GeofenceDashboard() {
                 </div>
             </div>
 
+            {helpOpen && (
+                <>
+                    <button
+                        type="button"
+                        aria-label="Stäng geofence-hjälp"
+                        onClick={() => setHelpOpen(false)}
+                        className="fixed inset-0 z-[9200] bg-slate-950/40 backdrop-blur-[2px]"
+                    />
+
+                    <div className="fixed left-1/2 top-1/2 z-[9210] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6 dark:border-slate-800">
+                            <div>
+                                <h2 className="text-2xl font-bold text-slate-950 dark:text-white">
+                                    Geofence
+                                </h2>
+
+                                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                    En enkel överblick över vad kartan visar.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setHelpOpen(false)}
+                                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 p-6">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+                                <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                                    Vad är geofence?
+                                </p>
+
+                                <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                    Ett geofence är ett digitalt arbetsområde på
+                                    kartan. Om en device lämnar området skapas
+                                    ett larm.
+                                </p>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                                <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                                    Status just nu
+                                </p>
+
+                                <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                    Du har{" "}
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                        {geofenceSummary.insideCount} inom
+                                        området
+                                    </span>
+                                    ,{" "}
+                                    <span className="font-bold text-red-600 dark:text-red-400">
+                                        {geofenceSummary.outsideCount} utanför
+                                        området
+                                    </span>
+                                    {geofenceSummary.unknownCount > 0 && (
+                                        <>
+                                            {" "}
+                                            och{" "}
+                                            <span className="font-bold text-slate-600 dark:text-slate-300">
+                                                {geofenceSummary.unknownCount}{" "}
+                                                med okänd status
+                                            </span>
+                                        </>
+                                    )}
+                                    .
+                                </p>
+                            </div>
+
+                            {geofenceSummary.mostDeviatingRow ? (
+                                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-700 dark:text-red-300">
+                                    <p className="text-sm font-bold">
+                                        Exempel på avvikelse
+                                    </p>
+
+                                    <p className="mt-2 text-sm leading-relaxed">
+                                        Device{" "}
+                                        <span className="font-bold">
+                                            {
+                                                geofenceSummary.mostDeviatingRow
+                                                    .device_ID
+                                            }
+                                        </span>{" "}
+                                        är utanför sitt arbetsområde med cirka{" "}
+                                        <span className="font-bold">
+                                            {
+                                                geofenceSummary.mostDeviatingRow
+                                                    .outside_by_m
+                                            }{" "}
+                                            m
+                                        </span>
+                                        .
+                                    </p>
+
+                                    <p className="mt-2 text-sm leading-relaxed">
+                                        Öppna alert-historiken för att se när
+                                        devicen lämnade zonen och om det har
+                                        hänt flera gånger.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-700 dark:text-emerald-300">
+                                    <p className="text-sm font-bold">
+                                        Inga avvikelser just nu
+                                    </p>
+
+                                    <p className="mt-2 text-sm leading-relaxed">
+                                        Alla registrerade devices verkar vara
+                                        inom sina tillåtna arbetsområden.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+
             {alertHistoryOpen && (
                 <>
                     <button
@@ -784,9 +1017,20 @@ export default function GeofenceDashboard() {
                                         const isOutside =
                                             alert.to_status === "outside";
 
+                                        const alertKey = getAlertKey(alert);
+                                        const explanationLoading = Boolean(
+                                            explanationLoadingByAlertId[
+                                                alertKey
+                                            ],
+                                        );
+                                        const explanationError =
+                                            explanationErrorByAlertId[alertKey];
+                                        const explanation =
+                                            explanationByAlertId[alertKey];
+
                                         return (
                                             <div
-                                                key={alert.id}
+                                                key={alertKey}
                                                 className={`rounded-2xl border p-4 text-sm ${getAlertHistoryClass(
                                                     alert,
                                                 )}`}
@@ -833,6 +1077,52 @@ export default function GeofenceDashboard() {
                                                             Tid:{" "}
                                                             {alert.created_at}
                                                         </p>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                explainAlert(
+                                                                    alert,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                explanationLoading
+                                                            }
+                                                            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-current/20 bg-white/70 px-3 py-2 text-xs font-semibold transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/30 dark:hover:bg-slate-950/50"
+                                                        >
+                                                            {explanationLoading ? (
+                                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                            ) : (
+                                                                <Info className="h-4 w-4" />
+                                                            )}
+
+                                                            {explanationLoading
+                                                                ? "Skapar förklaring..."
+                                                                : "Förklara larm"}
+                                                        </button>
+
+                                                        {explanationError && (
+                                                            <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300">
+                                                                {
+                                                                    explanationError
+                                                                }
+                                                            </div>
+                                                        )}
+
+                                                        {explanation && (
+                                                            <div className="mt-3 rounded-xl border border-slate-200 bg-white/80 p-3 text-xs leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200">
+                                                                <div className="mb-2 flex items-center gap-2 font-bold text-slate-950 dark:text-white">
+                                                                    <Info className="h-4 w-4" />
+                                                                    Förklaring
+                                                                </div>
+
+                                                                <p className="whitespace-pre-line">
+                                                                    {
+                                                                        explanation
+                                                                    }
+                                                                </p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

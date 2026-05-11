@@ -1,10 +1,13 @@
 import pool from "./db_connection.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-export async function get_user_devices_latest_positions(user_ID: number) {
+export async function get_user_devices_latest_positions(
+    user_ID: number,
+    limit: number,
+) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_user_devices_latest_positions(?);",
-        [user_ID],
+        "CALL get_user_devices_latest_positions(?, ?);",
+        [user_ID, limit],
     );
 
     return result[0];
@@ -23,10 +26,10 @@ export async function register_user(
     return result[0];
 }
 
-export async function login_user(username: string, password: string) {
+export async function login_user(username: string) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL login_user(?, ?);",
-        [username, password],
+        "CALL login_user(?);",
+        [username],
     );
 
     return result[0];

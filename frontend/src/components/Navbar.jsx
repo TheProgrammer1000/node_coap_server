@@ -14,6 +14,7 @@ import {
     Radar,
     Sun,
     X,
+    MapPinHouse,
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
@@ -199,14 +200,14 @@ export default function Navbar() {
 
     const navLinks = [
         {
-            to: "/product",
-            label: "Platform",
+            to: "/landing-page",
+            label: "LandingPage",
             icon: Box,
         },
         {
-            to: "/home",
+            to: "/dashboard",
             label: "Dashboard",
-            icon: Home,
+            icon: MapPinHouse,
         },
         {
             to: "/register-device",

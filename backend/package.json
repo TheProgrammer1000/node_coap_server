@@ -13,6 +13,7 @@
         "start": "node dist/app.js"
     },
     "dependencies": {
+        "bcrypt": "^6.0.0",
         "bl": "^7.0.0",
         "coap": "^1.5.0",
         "cors": "^2.8.6",
@@ -23,6 +24,7 @@
         "socket.io": "^4.8.3"
     },
     "devDependencies": {
+        "@types/bcrypt": "^6.0.0",
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.6",
         "@types/leaflet": "^1.9.21",
