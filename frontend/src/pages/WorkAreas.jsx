@@ -111,7 +111,31 @@ function FitMapToWorkAreas({ workAreas }) {
     return null;
 }
 
-export default function AddLocation() {
+function isEmptyWorkAreaResponse(result) {
+    const message = String(result?.msg || result?.message || "").toLowerCase();
+
+    return (
+        message.includes("no userid attach to area locations") ||
+        message.includes("no user attach to area locations") ||
+        message.includes("no area locations") ||
+        message.includes("no location areas") ||
+        message.includes("inga arbetsområden") ||
+        message.includes("inga områden") ||
+        message.includes("not found")
+    );
+}
+
+function getWorkAreasFromResponse(result) {
+    if (Array.isArray(result?.devices)) return result.devices;
+    if (Array.isArray(result?.areas)) return result.areas;
+    if (Array.isArray(result?.locations)) return result.locations;
+    if (Array.isArray(result?.location_areas)) return result.location_areas;
+    if (Array.isArray(result?.data)) return result.data;
+
+    return [];
+}
+
+export default function WorkAreas() {
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [radius, setRadius] = useState(100);
 
@@ -151,9 +175,11 @@ export default function AddLocation() {
             if (!result.success) {
                 setDevices([]);
                 setSelectedDeviceId("");
+
                 setDeviceError(
                     result.msg || "Inga registrerade enheter hittades.",
                 );
+
                 return;
             }
 
@@ -165,6 +191,7 @@ export default function AddLocation() {
 
             if (loadedDevices.length > 0) {
                 setSelectedDeviceId(String(loadedDevices[0].device_ID));
+                setDeviceError("");
             } else {
                 setSelectedDeviceId("");
                 setDeviceError("Inga registrerade enheter hittades.");
@@ -201,19 +228,39 @@ export default function AddLocation() {
 
             if (!result.success) {
                 setWorkAreas([]);
+
+                if (isEmptyWorkAreaResponse(result)) {
+                    setWorkAreasError("");
+                    return;
+                }
+
                 setWorkAreasError(
-                    result.msg || "Kunde inte hämta arbetsområden.",
+                    result.msg ||
+                        result.message ||
+                        "Kunde inte hämta arbetsområden.",
                 );
+
                 return;
             }
 
-            const loadedWorkAreas = Array.isArray(result.devices)
-                ? result.devices
-                : [];
+            const loadedWorkAreas = getWorkAreasFromResponse(result);
 
             setWorkAreas(loadedWorkAreas);
+            setWorkAreasError("");
         } catch (error) {
             console.error("Failed to load work areas:", error);
+
+            const apiMessage =
+                error?.response?.data?.msg ||
+                error?.response?.data?.message ||
+                "";
+
+            if (isEmptyWorkAreaResponse({ msg: apiMessage })) {
+                setWorkAreas([]);
+                setWorkAreasError("");
+                return;
+            }
+
             setWorkAreas([]);
             setWorkAreasError("Kunde inte hämta arbetsområden.");
         } finally {
@@ -229,6 +276,11 @@ export default function AddLocation() {
     async function handleSubmitWorkArea() {
         setSubmitError("");
         setSubmitSuccess("");
+
+        if (!userId) {
+            setSubmitError("Ingen användare hittades.");
+            return;
+        }
 
         if (!selectedLocation) {
             setSubmitError("Sök och välj en plats först.");
@@ -271,7 +323,9 @@ export default function AddLocation() {
 
             if (!res.ok || !data.success) {
                 throw new Error(
-                    data.message || "Kunde inte spara arbetsområdet",
+                    data.message ||
+                        data.msg ||
+                        "Kunde inte spara arbetsområdet",
                 );
             }
 
@@ -280,6 +334,7 @@ export default function AddLocation() {
             await loadWorkAreas();
         } catch (err) {
             console.error("Failed to save work area:", err);
+
             setSubmitError(
                 err.message ||
                     "Något gick fel när arbetsområdet skulle sparas.",
@@ -399,7 +454,7 @@ export default function AddLocation() {
                                 </select>
 
                                 {deviceError && (
-                                    <p className="mt-2 text-sm text-red-600 dark:text-red-300">
+                                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                                         {deviceError}
                                     </p>
                                 )}
@@ -493,12 +548,16 @@ export default function AddLocation() {
                                 </p>
                             ) : workAreas.length === 0 ? (
                                 <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Inga arbetsområden sparade ännu.
+                                    Inga arbetsområden sparade ännu. Sök en
+                                    adress ovan för att lägga till ett område.
                                 </p>
                             ) : (
                                 workAreas.map((area) => (
                                     <div
-                                        key={area.id}
+                                        key={
+                                            area.id ||
+                                            `${area.device_ID}-${area.lat}-${area.lon}`
+                                        }
                                         className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left dark:border-slate-800 dark:bg-slate-950"
                                     >
                                         <div className="flex items-start gap-3">
@@ -508,7 +567,8 @@ export default function AddLocation() {
 
                                             <div className="min-w-0 flex-1">
                                                 <p className="line-clamp-2 text-sm font-semibold text-slate-950 dark:text-white">
-                                                    {area.matchedAddress}
+                                                    {area.matchedAddress ||
+                                                        "Sparat arbetsområde"}
                                                 </p>
 
                                                 <div className="mt-2 grid gap-1 text-xs text-slate-500 dark:text-slate-400">
@@ -590,12 +650,18 @@ export default function AddLocation() {
                                 }
 
                                 return (
-                                    <Fragment key={area.id}>
+                                    <Fragment
+                                        key={
+                                            area.id ||
+                                            `${area.device_ID}-${lat}-${lon}`
+                                        }
+                                    >
                                         <Marker position={[lat, lon]}>
                                             <Popup>
                                                 <div>
                                                     <p className="font-medium">
-                                                        {area.matchedAddress}
+                                                        {area.matchedAddress ||
+                                                            "Sparat arbetsområde"}
                                                     </p>
 
                                                     <p>
@@ -606,7 +672,8 @@ export default function AddLocation() {
                                                     </p>
 
                                                     <p>
-                                                        Radie: {radiusMeters} m
+                                                        Radie:{" "}
+                                                        {radiusMeters || 100} m
                                                     </p>
 
                                                     <p>

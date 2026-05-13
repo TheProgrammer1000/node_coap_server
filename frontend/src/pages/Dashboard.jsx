@@ -124,7 +124,7 @@ function hasWeakAccuracy(point) {
 function getStatusLabel(status) {
     if (status === "online") return "Online";
     if (status === "offline") return "Offline";
-    return "Okänd";
+    return "Ingen status";
 }
 
 function getStatusClasses(status) {
@@ -241,6 +241,12 @@ function formatPositionCount(count) {
     if (count === 0) return "ingen sparad position";
     if (count === 1) return "1 sparad position";
     return `${count} sparade positioner`;
+}
+
+function formatWaitingForGnssCount(count) {
+    if (count === 0) return "Alla devices har GNSS-position.";
+    if (count === 1) return "1 device väntar på första GNSS-position.";
+    return `${count} devices väntar på första GNSS-position.`;
 }
 
 function getHistoryButtonLabel(showHistory, count) {
@@ -603,7 +609,7 @@ function FitMapToDevices({ devices }) {
             return;
         }
 
-        window.setTimeout(() => {
+        const timer = window.setTimeout(() => {
             map.invalidateSize();
 
             if (validPositions.length === 1) {
@@ -617,6 +623,10 @@ function FitMapToDevices({ devices }) {
 
             hasFittedMap.current = true;
         }, 150);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
     }, [devices, map]);
 
     return null;
@@ -792,7 +802,7 @@ export default function Dashboard() {
             setErrorMessage("");
         } catch (error) {
             console.error("Failed to load dashboard data:", error);
-            setErrorMessage("Failed to load device data");
+            setErrorMessage("Kunde inte hämta device-data.");
         } finally {
             setLoading(false);
         }
@@ -959,9 +969,9 @@ export default function Dashboard() {
                     </h1>
 
                     <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400 md:text-base">
-                        Se var dina devices senast rapporterade sin position. En
-                        registrerad device visas även innan första
-                        GNSS-positionen finns.
+                        Se var dina devices senast rapporterade sin position.
+                        Registrerade devices visas även innan första
+                        GNSS-positionen har kommit in.
                     </p>
                 </div>
 
@@ -1070,10 +1080,12 @@ export default function Dashboard() {
 
                                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                         {dashboardStats.waitingForGnss > 0
-                                            ? `${dashboardStats.waitingForGnss} device väntar på första GNSS-position.`
+                                            ? formatWaitingForGnssCount(
+                                                  dashboardStats.waitingForGnss,
+                                              )
                                             : lastLiveUpdate
                                               ? `Senaste live-update ${lastLiveUpdate}`
-                                              : "Väntar på live-data från Socket.IO"}
+                                              : "Väntar på live-data från Socket.IO."}
                                     </p>
                                 </div>
                             </div>
@@ -1122,19 +1134,20 @@ export default function Dashboard() {
                                 </div>
 
                                 <h3 className="text-xl font-bold">
-                                    Device registrerad
+                                    Device registrerad – väntar på första
+                                    GNSS-position
                                 </h3>
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
-                                    Du har registrerade devices, men ingen har
-                                    skickat GNSS-position ännu. Kartan visar
-                                    positionen när första GNSS-paketet tas emot
-                                    via CoAP.
+                                    Du har registrerade devices, men ingen
+                                    GNSS-position har tagits emot ännu. Kartan
+                                    kommer automatiskt visa device-positionen
+                                    när första GNSS-paketet kommer in via CoAP.
                                 </p>
 
                                 <div className="mt-5 w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left dark:border-slate-800 dark:bg-slate-950">
                                     <p className="text-sm font-bold">
-                                        Registrerade devices
+                                        Registrerade devices utan GNSS-position
                                     </p>
 
                                     <div className="mt-3 space-y-2">
@@ -1161,7 +1174,7 @@ export default function Dashboard() {
                                                     </div>
 
                                                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                                        Väntar på GNSS
+                                                        Väntar på första GNSS
                                                     </span>
                                                 </div>
                                             );
@@ -1195,7 +1208,7 @@ export default function Dashboard() {
 
                                                 {!selectedHasPosition && (
                                                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
-                                                        Ingen GNSS-position
+                                                        Väntar på första GNSS
                                                     </span>
                                                 )}
 
@@ -1210,14 +1223,14 @@ export default function Dashboard() {
 
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                                 {selectedHasPosition
-                                                    ? `Kartan visar device:ns senaste kända position. Senast sedd ${
+                                                    ? `Kartan visar devicens senaste kända position. Senast sedd ${
                                                           selectedLastSeen
                                                               ? formatAge(
                                                                     selectedLastSeen,
                                                                 )
                                                               : "okänd tid"
                                                       }.`
-                                                    : "Den valda devicen är registrerad men har ingen GNSS-position ännu."}
+                                                    : "Den valda devicen är registrerad men väntar fortfarande på första GNSS-positionen."}
                                             </p>
 
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -1564,8 +1577,8 @@ export default function Dashboard() {
                                     </h2>
 
                                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                        Välj en device. Om den saknar GNSS-data
-                                        visas den som väntande.
+                                        Välj en device. Devices utan GNSS visas
+                                        tydligt som väntande.
                                     </p>
                                 </div>
 
@@ -1666,7 +1679,7 @@ export default function Dashboard() {
                                                                         ? `Senast sedd: ${formatAge(
                                                                               lastSeen,
                                                                           )}`
-                                                                        : "Registrerad, väntar på första GNSS-position"}
+                                                                        : "Registrerad – väntar på första GNSS-position"}
                                                                 </p>
                                                             </div>
 
@@ -1684,7 +1697,9 @@ export default function Dashboard() {
                                                                 ) : (
                                                                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
                                                                         Väntar
-                                                                        på GNSS
+                                                                        på
+                                                                        första
+                                                                        GNSS
                                                                     </span>
                                                                 )}
 
@@ -1767,8 +1782,8 @@ export default function Dashboard() {
 
                         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <p className="text-sm text-slate-600 dark:text-slate-300">
-                                Historiken visas bara när devicen har skickat
-                                GNSS-positioner.{" "}
+                                Historiken visas först när devicen har skickat
+                                minst en GNSS-position.{" "}
                                 {hasSelectedHistory
                                     ? `Den här devicen har ${selectedHistoryText}.`
                                     : selectedDevice

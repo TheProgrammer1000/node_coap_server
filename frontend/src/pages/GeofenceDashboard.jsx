@@ -17,6 +17,7 @@ import {
     History,
     Info,
     Loader2,
+    MapPinned,
     Radar,
     Wifi,
     WifiOff,
@@ -34,6 +35,15 @@ L.Icon.Default.mergeOptions({
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+function getStoredUser() {
+    try {
+        const storedUser = localStorage.getItem("user");
+        return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+        return null;
+    }
+}
+
 function parseTimestamp(value) {
     if (!value) return 0;
 
@@ -46,10 +56,39 @@ function parseTimestamp(value) {
     return Number.isFinite(time) ? time : 0;
 }
 
+function normalizeNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
 function getGeofenceRowKey(row) {
     return [
         row.device_ID,
         row.area_location_id ?? row.area_location_lat,
+        row.area_location_lon,
+        row.area_location_radius_m,
+    ].join("-");
+}
+
+function getAreaKeyFromWorkArea(area) {
+    if (area.id) return `id-${area.id}`;
+
+    return [
+        "fallback",
+        area.device_ID,
+        area.lat,
+        area.lon,
+        area.circle_radius_m,
+    ].join("-");
+}
+
+function getAreaKeyFromGeofenceRow(row) {
+    if (row.area_location_id) return `id-${row.area_location_id}`;
+
+    return [
+        "fallback",
+        row.device_ID,
+        row.area_location_lat,
         row.area_location_lon,
         row.area_location_radius_m,
     ].join("-");
@@ -81,6 +120,43 @@ function getAlertKey(alert) {
     );
 }
 
+function isEmptyGeofenceResponse(result) {
+    const message = String(result?.msg || result?.message || "").toLowerCase();
+
+    return (
+        message.includes("no userid with gnss data for area locations") ||
+        message.includes("no gnss data") ||
+        message.includes("no data") ||
+        message.includes("not found") ||
+        message.includes("ingen geofence-data") ||
+        message.includes("ingen gnss")
+    );
+}
+
+function isEmptyWorkAreaResponse(result) {
+    const message = String(result?.msg || result?.message || "").toLowerCase();
+
+    return (
+        message.includes("no userid attach to area locations") ||
+        message.includes("no user attach to area locations") ||
+        message.includes("no area locations") ||
+        message.includes("no location areas") ||
+        message.includes("inga arbetsområden") ||
+        message.includes("inga områden") ||
+        message.includes("not found")
+    );
+}
+
+function getWorkAreasFromResponse(result) {
+    if (Array.isArray(result?.devices)) return result.devices;
+    if (Array.isArray(result?.areas)) return result.areas;
+    if (Array.isArray(result?.locations)) return result.locations;
+    if (Array.isArray(result?.location_areas)) return result.location_areas;
+    if (Array.isArray(result?.data)) return result.data;
+
+    return [];
+}
+
 function ResizeMap() {
     const map = useMap();
 
@@ -104,26 +180,33 @@ function ResizeMap() {
     return null;
 }
 
-function FitMapToGeofences({ rows }) {
+function FitMapToGeofences({ rows, workAreas }) {
     const map = useMap();
 
     useEffect(() => {
-        if (!rows || rows.length === 0) return;
-
         const points = [];
 
         rows.forEach((row) => {
-            const deviceLat = Number(row.device_now_lat);
-            const deviceLon = Number(row.device_now_lon);
-            const areaLat = Number(row.area_location_lat);
-            const areaLon = Number(row.area_location_lon);
+            const deviceLat = normalizeNumber(row.device_now_lat);
+            const deviceLon = normalizeNumber(row.device_now_lon);
+            const areaLat = normalizeNumber(row.area_location_lat);
+            const areaLon = normalizeNumber(row.area_location_lon);
 
-            if (Number.isFinite(deviceLat) && Number.isFinite(deviceLon)) {
+            if (deviceLat !== null && deviceLon !== null) {
                 points.push([deviceLat, deviceLon]);
             }
 
-            if (Number.isFinite(areaLat) && Number.isFinite(areaLon)) {
+            if (areaLat !== null && areaLon !== null) {
                 points.push([areaLat, areaLon]);
+            }
+        });
+
+        workAreas.forEach((area) => {
+            const lat = normalizeNumber(area.lat);
+            const lon = normalizeNumber(area.lon);
+
+            if (lat !== null && lon !== null) {
+                points.push([lat, lon]);
             }
         });
 
@@ -141,7 +224,7 @@ function FitMapToGeofences({ rows }) {
         return () => {
             window.clearTimeout(timer);
         };
-    }, [rows, map]);
+    }, [rows, workAreas, map]);
 
     return null;
 }
@@ -149,7 +232,7 @@ function FitMapToGeofences({ rows }) {
 function getStatusText(status) {
     if (status === "inside") return "Inom området";
     if (status === "outside") return "Utanför området";
-    return "Okänd";
+    return "Ingen GNSS-status ännu";
 }
 
 function getStatusColor(status) {
@@ -230,10 +313,23 @@ function getGeofenceSummary(rows) {
     };
 }
 
+function getAreaDeviceLabel(area) {
+    if (area.device_name) {
+        return `${area.device_name} - ${area.device_ID}`;
+    }
+
+    return `Device ${area.device_ID}`;
+}
+
 export default function GeofenceDashboard() {
     const [rows, setRows] = useState([]);
+    const [workAreas, setWorkAreas] = useState([]);
+
     const [loading, setLoading] = useState(true);
+    const [workAreasLoading, setWorkAreasLoading] = useState(true);
+
     const [error, setError] = useState("");
+    const [workAreasError, setWorkAreasError] = useState("");
 
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
@@ -253,8 +349,7 @@ export default function GeofenceDashboard() {
         {},
     );
 
-    const storedUser = localStorage.getItem("user");
-    const user = storedUser ? JSON.parse(storedUser) : null;
+    const user = getStoredUser();
     const userId = user?.user_ID || null;
 
     const latestRows = useMemo(() => {
@@ -264,6 +359,74 @@ export default function GeofenceDashboard() {
     const geofenceSummary = useMemo(() => {
         return getGeofenceSummary(latestRows);
     }, [latestRows]);
+
+    const statusByAreaKey = useMemo(() => {
+        const map = new Map();
+
+        latestRows.forEach((row) => {
+            map.set(getAreaKeyFromGeofenceRow(row), row);
+        });
+
+        return map;
+    }, [latestRows]);
+
+    async function loadWorkAreas() {
+        if (!userId) {
+            setWorkAreas([]);
+            setWorkAreasError("Ingen användare hittades.");
+            setWorkAreasLoading(false);
+            return;
+        }
+
+        try {
+            setWorkAreasLoading(true);
+            setWorkAreasError("");
+
+            const response = await axios.get(
+                `/api/device/get/location_areas/${userId}`,
+            );
+
+            const result = response.data;
+
+            console.log("Location areas response:", result);
+
+            if (!result.success) {
+                setWorkAreas([]);
+
+                if (isEmptyWorkAreaResponse(result)) {
+                    setWorkAreasError("");
+                    return;
+                }
+
+                setWorkAreasError(
+                    result.msg ||
+                        result.message ||
+                        "Kunde inte hämta arbetsområden.",
+                );
+
+                return;
+            }
+
+            setWorkAreas(getWorkAreasFromResponse(result));
+            setWorkAreasError("");
+        } catch (err) {
+            console.error("Failed to load location areas:", err);
+
+            const apiMessage =
+                err?.response?.data?.msg || err?.response?.data?.message || "";
+
+            if (isEmptyWorkAreaResponse({ msg: apiMessage })) {
+                setWorkAreas([]);
+                setWorkAreasError("");
+                return;
+            }
+
+            setWorkAreas([]);
+            setWorkAreasError("Kunde inte hämta arbetsområden.");
+        } finally {
+            setWorkAreasLoading(false);
+        }
+    }
 
     async function loadGeofenceData() {
         if (!userId) {
@@ -287,13 +450,30 @@ export default function GeofenceDashboard() {
 
             if (!result.success) {
                 setRows([]);
+
+                if (isEmptyGeofenceResponse(result)) {
+                    setError("");
+                    return;
+                }
+
                 setError(result.msg || "Kunde inte hämta geofence-data.");
                 return;
             }
 
             setRows(Array.isArray(result.data) ? result.data : []);
+            setError("");
         } catch (err) {
             console.error("Failed to load geofence data:", err);
+
+            const apiMessage =
+                err?.response?.data?.msg || err?.response?.data?.message || "";
+
+            if (isEmptyGeofenceResponse({ msg: apiMessage })) {
+                setRows([]);
+                setError("");
+                return;
+            }
+
             setRows([]);
             setError("Kunde inte hämta geofence-data.");
         } finally {
@@ -395,6 +575,7 @@ export default function GeofenceDashboard() {
     }
 
     useEffect(() => {
+        loadWorkAreas();
         loadGeofenceData();
     }, [userId]);
 
@@ -524,9 +705,9 @@ export default function GeofenceDashboard() {
                 </div>
             </div>
 
-            {error && (
+            {(error || workAreasError) && (
                 <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
-                    {error}
+                    {error || workAreasError}
                 </div>
             )}
 
@@ -543,7 +724,7 @@ export default function GeofenceDashboard() {
                             </h2>
 
                             <p className="text-sm text-slate-500 dark:text-slate-400">
-                                {loading
+                                {loading || workAreasLoading
                                     ? "Laddar..."
                                     : `${latestRows.length} geofence-status`}
                             </p>
@@ -551,15 +732,11 @@ export default function GeofenceDashboard() {
                     </div>
 
                     <div className="mt-5 max-h-[calc(100dvh-360px)] min-h-[360px] space-y-3 overflow-y-auto pr-1">
-                        {loading ? (
+                        {loading || workAreasLoading ? (
                             <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
                                 Hämtar geofence-data...
                             </p>
-                        ) : latestRows.length === 0 ? (
-                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                Ingen geofence-data hittades.
-                            </p>
-                        ) : (
+                        ) : latestRows.length > 0 ? (
                             latestRows.map((row, index) => {
                                 const isOutside =
                                     row.geofence_status === "outside";
@@ -663,6 +840,60 @@ export default function GeofenceDashboard() {
                                     </div>
                                 );
                             })
+                        ) : workAreas.length > 0 ? (
+                            <>
+                                <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                    Arbetsområden finns, men ingen GNSS-data har
+                                    kommit in ännu.
+                                </p>
+
+                                {workAreas.map((area) => (
+                                    <div
+                                        key={getAreaKeyFromWorkArea(area)}
+                                        className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <div className="rounded-xl bg-emerald-500/10 p-2">
+                                                <MapPinned className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold text-slate-950 dark:text-white">
+                                                    {area.matchedAddress ||
+                                                        "Sparat arbetsområde"}
+                                                </p>
+
+                                                <p className="mt-2">
+                                                    Device:{" "}
+                                                    <span className="font-semibold">
+                                                        {getAreaDeviceLabel(
+                                                            area,
+                                                        )}
+                                                    </span>
+                                                </p>
+
+                                                <p>
+                                                    Radie:{" "}
+                                                    <span className="font-semibold">
+                                                        {area.circle_radius_m} m
+                                                    </span>
+                                                </p>
+
+                                                <p>
+                                                    Status:{" "}
+                                                    <span className="font-semibold text-slate-500">
+                                                        Väntar på GNSS-data
+                                                    </span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        ) : (
+                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                Inga arbetsområden eller geofence-data hittades.
+                            </p>
                         )}
                     </div>
                 </div>
@@ -681,22 +912,99 @@ export default function GeofenceDashboard() {
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                             />
 
-                            <FitMapToGeofences rows={latestRows} />
+                            <FitMapToGeofences
+                                rows={latestRows}
+                                workAreas={workAreas}
+                            />
+
+                            {workAreas.map((area) => {
+                                const areaLat = normalizeNumber(area.lat);
+                                const areaLon = normalizeNumber(area.lon);
+                                const radiusMeters = normalizeNumber(
+                                    area.circle_radius_m,
+                                );
+
+                                if (areaLat === null || areaLon === null) {
+                                    return null;
+                                }
+
+                                const statusRow = statusByAreaKey.get(
+                                    getAreaKeyFromWorkArea(area),
+                                );
+
+                                const color = getStatusColor(
+                                    statusRow?.geofence_status,
+                                );
+
+                                return (
+                                    <Fragment
+                                        key={getAreaKeyFromWorkArea(area)}
+                                    >
+                                        <Circle
+                                            center={[areaLat, areaLon]}
+                                            radius={radiusMeters || 100}
+                                            pathOptions={{
+                                                color,
+                                                fillColor: color,
+                                                fillOpacity: 0.14,
+                                                opacity: 0.95,
+                                                weight: 3,
+                                            }}
+                                        >
+                                            <Popup>
+                                                <div>
+                                                    <p className="font-medium">
+                                                        {area.matchedAddress ||
+                                                            "Tillåtet område"}
+                                                    </p>
+
+                                                    <p>
+                                                        Device:{" "}
+                                                        {getAreaDeviceLabel(
+                                                            area,
+                                                        )}
+                                                    </p>
+
+                                                    <p>
+                                                        Radie:{" "}
+                                                        {radiusMeters || 100} m
+                                                    </p>
+
+                                                    <p>
+                                                        Status:{" "}
+                                                        {getStatusText(
+                                                            statusRow?.geofence_status,
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            </Popup>
+                                        </Circle>
+                                    </Fragment>
+                                );
+                            })}
 
                             {latestRows.map((row, index) => {
-                                const deviceLat = Number(row.device_now_lat);
-                                const deviceLon = Number(row.device_now_lon);
-                                const areaLat = Number(row.area_location_lat);
-                                const areaLon = Number(row.area_location_lon);
-                                const radiusMeters = Number(
+                                const deviceLat = normalizeNumber(
+                                    row.device_now_lat,
+                                );
+                                const deviceLon = normalizeNumber(
+                                    row.device_now_lon,
+                                );
+                                const areaLat = normalizeNumber(
+                                    row.area_location_lat,
+                                );
+                                const areaLon = normalizeNumber(
+                                    row.area_location_lon,
+                                );
+                                const radiusMeters = normalizeNumber(
                                     row.area_location_radius_m,
                                 );
 
                                 if (
-                                    !Number.isFinite(deviceLat) ||
-                                    !Number.isFinite(deviceLon) ||
-                                    !Number.isFinite(areaLat) ||
-                                    !Number.isFinite(areaLon)
+                                    deviceLat === null ||
+                                    deviceLon === null ||
+                                    areaLat === null ||
+                                    areaLon === null
                                 ) {
                                     return null;
                                 }
@@ -709,47 +1017,6 @@ export default function GeofenceDashboard() {
                                     <Fragment
                                         key={`${getGeofenceRowKey(row)}-${index}`}
                                     >
-                                        <Circle
-                                            center={[areaLat, areaLon]}
-                                            radius={radiusMeters || 100}
-                                            pathOptions={{
-                                                color,
-                                                fillColor: color,
-                                                fillOpacity: 0.16,
-                                                opacity: 0.95,
-                                                weight: 3,
-                                            }}
-                                        >
-                                            <Popup>
-                                                <div>
-                                                    <p className="font-medium">
-                                                        Tillåtet område
-                                                    </p>
-
-                                                    {row.matchedAddress && (
-                                                        <p>
-                                                            {row.matchedAddress}
-                                                        </p>
-                                                    )}
-
-                                                    <p>
-                                                        Device: {row.device_ID}
-                                                    </p>
-
-                                                    <p>
-                                                        Radie: {radiusMeters} m
-                                                    </p>
-
-                                                    <p>
-                                                        Status:{" "}
-                                                        {getStatusText(
-                                                            row.geofence_status,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                            </Popup>
-                                        </Circle>
-
                                         <Marker
                                             position={[deviceLat, deviceLon]}
                                         >
@@ -785,7 +1052,9 @@ export default function GeofenceDashboard() {
                                                             Kvar till gräns:{" "}
                                                             {Math.max(
                                                                 0,
-                                                                radiusMeters -
+                                                                Number(
+                                                                    radiusMeters,
+                                                                ) -
                                                                     Number(
                                                                         row.distance_m,
                                                                     ),
@@ -827,9 +1096,9 @@ export default function GeofenceDashboard() {
             <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 md:grid-cols-3">
                 <div>
                     <span className="font-semibold text-slate-950 dark:text-white">
-                        Blå marker:
+                        Marker:
                     </span>{" "}
-                    device-position
+                    device-position från GNSS
                 </div>
 
                 <div>
@@ -918,6 +1187,18 @@ export default function GeofenceDashboard() {
                                     )}
                                     .
                                 </p>
+
+                                {latestRows.length === 0 &&
+                                    workAreas.length > 0 && (
+                                        <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                            Det finns{" "}
+                                            <span className="font-bold">
+                                                {workAreas.length}
+                                            </span>{" "}
+                                            sparade arbetsområden, men ingen
+                                            GNSS-status har kommit in ännu.
+                                        </p>
+                                    )}
                             </div>
 
                             {geofenceSummary.mostDeviatingRow ? (
@@ -958,8 +1239,8 @@ export default function GeofenceDashboard() {
                                     </p>
 
                                     <p className="mt-2 text-sm leading-relaxed">
-                                        Alla registrerade devices verkar vara
-                                        inom sina tillåtna arbetsområden.
+                                        Ingen device är markerad som utanför sin
+                                        zon just nu.
                                     </p>
                                 </div>
                             )}
@@ -983,6 +1264,7 @@ export default function GeofenceDashboard() {
                                 <p className="text-lg font-bold text-slate-950 dark:text-white">
                                     Alert-historik
                                 </p>
+
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
                                     Device {selectedAlertDeviceId}
                                 </p>

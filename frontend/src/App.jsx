@@ -8,7 +8,7 @@ import Register from "./pages/Register";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import RegisterDevice from "./pages/RegisterDevice";
-import AddLocation from "./pages/AddLocation";
+import AddLocation from "./pages/WorkAreas";
 import GeofenceDashboard from "./pages/GeofenceDashboard";
 
 export default function App() {
