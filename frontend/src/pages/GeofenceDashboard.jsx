@@ -19,6 +19,7 @@ import {
     Loader2,
     MapPinned,
     Radar,
+    Smartphone,
     Wifi,
     WifiOff,
     X,
@@ -59,6 +60,86 @@ function parseTimestamp(value) {
 function normalizeNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
+}
+
+function getPointDeviceId(point) {
+    return point?.device_ID ?? point?.device_id ?? null;
+}
+
+function hasValidPosition(device) {
+    const lat = Number(device?.lat);
+    const lon = Number(device?.lon);
+
+    return Number.isFinite(lat) && Number.isFinite(lon);
+}
+
+function getDeviceName(device) {
+    const deviceId = getPointDeviceId(device);
+
+    return (
+        device?.device_name ??
+        device?.deviceName ??
+        device?.name ??
+        (deviceId ? `Device ${deviceId}` : "Okänd device")
+    );
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return "N/A";
+
+    const normalized = String(timestamp).includes("T")
+        ? String(timestamp)
+        : String(timestamp).replace(" ", "T");
+
+    const date = new Date(normalized);
+
+    if (Number.isNaN(date.getTime())) return "N/A";
+
+    return new Intl.DateTimeFormat("sv-SE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(date);
+}
+
+function normalizeGnssResponse(result) {
+    const data = result?.data;
+
+    if (Array.isArray(data) && Array.isArray(data[0])) {
+        return data[0];
+    }
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    return [];
+}
+
+function getLatestDevicePositions(rows) {
+    const latestByDevice = new Map();
+
+    for (const row of rows) {
+        const deviceId = getPointDeviceId(row);
+
+        if (!deviceId) continue;
+
+        const key = String(deviceId);
+        const existing = latestByDevice.get(key);
+
+        const rowTime = parseTimestamp(row.data_timestamp ?? row.created_at);
+        const existingTime = parseTimestamp(
+            existing?.data_timestamp ?? existing?.created_at,
+        );
+
+        if (!existing || rowTime > existingTime) {
+            latestByDevice.set(key, row);
+        }
+    }
+
+    return Array.from(latestByDevice.values()).filter(hasValidPosition);
 }
 
 function getGeofenceRowKey(row) {
@@ -180,7 +261,7 @@ function ResizeMap() {
     return null;
 }
 
-function FitMapToGeofences({ rows, workAreas }) {
+function FitMapToGeofences({ rows, workAreas, devicePositions }) {
     const map = useMap();
 
     useEffect(() => {
@@ -210,21 +291,34 @@ function FitMapToGeofences({ rows, workAreas }) {
             }
         });
 
+        devicePositions.forEach((device) => {
+            const lat = normalizeNumber(device.lat);
+            const lon = normalizeNumber(device.lon);
+
+            if (lat !== null && lon !== null) {
+                points.push([lat, lon]);
+            }
+        });
+
         if (points.length === 0) return;
 
         const timer = window.setTimeout(() => {
             map.invalidateSize();
 
-            map.fitBounds(L.latLngBounds(points), {
-                padding: [60, 60],
-                maxZoom: 13,
-            });
+            if (points.length === 1) {
+                map.setView(points[0], 14);
+            } else {
+                map.fitBounds(L.latLngBounds(points), {
+                    padding: [60, 60],
+                    maxZoom: 13,
+                });
+            }
         }, 150);
 
         return () => {
             window.clearTimeout(timer);
         };
-    }, [rows, workAreas, map]);
+    }, [rows, workAreas, devicePositions, map]);
 
     return null;
 }
@@ -324,9 +418,11 @@ function getAreaDeviceLabel(area) {
 export default function GeofenceDashboard() {
     const [rows, setRows] = useState([]);
     const [workAreas, setWorkAreas] = useState([]);
+    const [devicePositions, setDevicePositions] = useState([]);
 
     const [loading, setLoading] = useState(true);
     const [workAreasLoading, setWorkAreasLoading] = useState(true);
+    const [devicePositionsLoading, setDevicePositionsLoading] = useState(true);
 
     const [error, setError] = useState("");
     const [workAreasError, setWorkAreasError] = useState("");
@@ -356,6 +452,21 @@ export default function GeofenceDashboard() {
         return getLatestGeofenceRows(rows);
     }, [rows]);
 
+    const latestDevicePositions = useMemo(() => {
+        return getLatestDevicePositions(devicePositions);
+    }, [devicePositions]);
+
+    const geofencedDeviceIds = useMemo(() => {
+        return new Set(latestRows.map((row) => String(row.device_ID)));
+    }, [latestRows]);
+
+    const devicesWithoutGeofence = useMemo(() => {
+        return latestDevicePositions.filter((device) => {
+            const deviceId = getPointDeviceId(device);
+            return !geofencedDeviceIds.has(String(deviceId));
+        });
+    }, [latestDevicePositions, geofencedDeviceIds]);
+
     const geofenceSummary = useMemo(() => {
         return getGeofenceSummary(latestRows);
     }, [latestRows]);
@@ -369,6 +480,8 @@ export default function GeofenceDashboard() {
 
         return map;
     }, [latestRows]);
+
+    const pageLoading = loading || workAreasLoading || devicePositionsLoading;
 
     async function loadWorkAreas() {
         if (!userId) {
@@ -481,6 +594,35 @@ export default function GeofenceDashboard() {
         }
     }
 
+    async function loadDevicePositions() {
+        if (!userId) {
+            setDevicePositions([]);
+            setDevicePositionsLoading(false);
+            return;
+        }
+
+        try {
+            setDevicePositionsLoading(true);
+
+            const response = await axios.get(`/api/device/gnss/user/${userId}`);
+            const result = response.data;
+
+            console.log("Device GNSS response:", result);
+
+            if (result?.success === false) {
+                setDevicePositions([]);
+                return;
+            }
+
+            setDevicePositions(normalizeGnssResponse(result));
+        } catch (err) {
+            console.error("Failed to load device positions:", err);
+            setDevicePositions([]);
+        } finally {
+            setDevicePositionsLoading(false);
+        }
+    }
+
     async function loadAlertHistory(device_ID) {
         if (!device_ID) return;
 
@@ -577,6 +719,7 @@ export default function GeofenceDashboard() {
     useEffect(() => {
         loadWorkAreas();
         loadGeofenceData();
+        loadDevicePositions();
     }, [userId]);
 
     useEffect(() => {
@@ -608,6 +751,26 @@ export default function GeofenceDashboard() {
             console.log("Joined geofence socket room:", payload);
         }
 
+        function handleNewGnssPosition(newPoint) {
+            console.log("Live GNSS position on geofence page:", newPoint);
+
+            setDevicePositions((prev) => {
+                const deviceId = getPointDeviceId(newPoint);
+
+                if (!deviceId) {
+                    return [newPoint, ...prev];
+                }
+
+                const filtered = prev.filter((row) => {
+                    return String(getPointDeviceId(row)) !== String(deviceId);
+                });
+
+                return [newPoint, ...filtered];
+            });
+
+            setLastLiveUpdate(new Date().toLocaleTimeString());
+        }
+
         function handleNewGeofencePosition(newRow) {
             console.log("Live geofence position:", newRow);
 
@@ -628,6 +791,7 @@ export default function GeofenceDashboard() {
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
         socket.on("socket:joined", handleJoined);
+        socket.on("gnss:new-position", handleNewGnssPosition);
         socket.on("geofence:new-position", handleNewGeofencePosition);
 
         if (!socket.connected) {
@@ -641,6 +805,7 @@ export default function GeofenceDashboard() {
             socket.off("disconnect", handleDisconnect);
             socket.off("connect_error", handleConnectError);
             socket.off("socket:joined", handleJoined);
+            socket.off("gnss:new-position", handleNewGnssPosition);
             socket.off("geofence:new-position", handleNewGeofencePosition);
         };
     }, [userId]);
@@ -724,7 +889,7 @@ export default function GeofenceDashboard() {
                             </h2>
 
                             <p className="text-sm text-slate-500 dark:text-slate-400">
-                                {loading || workAreasLoading
+                                {pageLoading
                                     ? "Laddar..."
                                     : `${latestRows.length} geofence-status`}
                             </p>
@@ -732,168 +897,262 @@ export default function GeofenceDashboard() {
                     </div>
 
                     <div className="mt-5 max-h-[calc(100dvh-360px)] min-h-[360px] space-y-3 overflow-y-auto pr-1">
-                        {loading || workAreasLoading ? (
+                        {pageLoading ? (
                             <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
                                 Hämtar geofence-data...
                             </p>
-                        ) : latestRows.length > 0 ? (
-                            latestRows.map((row, index) => {
-                                const isOutside =
-                                    row.geofence_status === "outside";
-
-                                const distanceToBorder =
-                                    Number(row.area_location_radius_m) -
-                                    Number(row.distance_m);
-
-                                return (
-                                    <div
-                                        key={`${getGeofenceRowKey(row)}-${index}`}
-                                        className={`rounded-xl border p-4 text-sm ${getStatusCardClass(
-                                            row.geofence_status,
-                                        )}`}
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            <div className="rounded-xl bg-white/70 p-2 dark:bg-slate-950/40">
-                                                {isOutside ? (
-                                                    <AlertCircle className="h-5 w-5" />
-                                                ) : (
-                                                    <CheckCircle2 className="h-5 w-5" />
-                                                )}
-                                            </div>
-
-                                            <div className="min-w-0 flex-1">
-                                                <p className="font-semibold">
-                                                    Device {row.device_ID}
-                                                </p>
-
-                                                <p className="mt-1">
-                                                    Status:{" "}
-                                                    <span className="font-semibold">
-                                                        {getStatusText(
-                                                            row.geofence_status,
-                                                        )}
-                                                    </span>
-                                                </p>
-
-                                                <p>
-                                                    Avstånd från centrum:{" "}
-                                                    <span className="font-semibold">
-                                                        {row.distance_m} m
-                                                    </span>
-                                                </p>
-
-                                                {isOutside ? (
-                                                    <p>
-                                                        Utanför gränsen:{" "}
-                                                        <span className="font-semibold">
-                                                            {row.outside_by_m} m
-                                                        </span>
-                                                    </p>
-                                                ) : (
-                                                    <p>
-                                                        Kvar till gräns:{" "}
-                                                        <span className="font-semibold">
-                                                            {Math.max(
-                                                                0,
-                                                                distanceToBorder,
-                                                            )}{" "}
-                                                            m
-                                                        </span>
-                                                    </p>
-                                                )}
-
-                                                <p>
-                                                    Tillåten radie:{" "}
-                                                    <span className="font-semibold">
-                                                        {
-                                                            row.area_location_radius_m
-                                                        }{" "}
-                                                        m
-                                                    </span>
-                                                </p>
-
-                                                <p>
-                                                    Accuracy:{" "}
-                                                    <span className="font-semibold">
-                                                        {row.acc} m
-                                                    </span>
-                                                </p>
-
-                                                <p className="mt-2 text-xs opacity-80">
-                                                    Tid: {row.data_timestamp}
-                                                </p>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        loadAlertHistory(
-                                                            row.device_ID,
-                                                        )
-                                                    }
-                                                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-current/20 bg-white/60 px-3 py-2 text-xs font-semibold transition hover:bg-white/90 dark:bg-slate-950/30 dark:hover:bg-slate-950/50"
-                                                >
-                                                    <History className="h-4 w-4" />
-                                                    Visa alert-historik
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        ) : workAreas.length > 0 ? (
-                            <>
-                                <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Arbetsområden finns, men ingen GNSS-data har
-                                    kommit in ännu.
-                                </p>
-
-                                {workAreas.map((area) => (
-                                    <div
-                                        key={getAreaKeyFromWorkArea(area)}
-                                        className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            <div className="rounded-xl bg-emerald-500/10 p-2">
-                                                <MapPinned className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                                            </div>
-
-                                            <div className="min-w-0 flex-1">
-                                                <p className="font-semibold text-slate-950 dark:text-white">
-                                                    {area.matchedAddress ||
-                                                        "Sparat arbetsområde"}
-                                                </p>
-
-                                                <p className="mt-2">
-                                                    Device:{" "}
-                                                    <span className="font-semibold">
-                                                        {getAreaDeviceLabel(
-                                                            area,
-                                                        )}
-                                                    </span>
-                                                </p>
-
-                                                <p>
-                                                    Radie:{" "}
-                                                    <span className="font-semibold">
-                                                        {area.circle_radius_m} m
-                                                    </span>
-                                                </p>
-
-                                                <p>
-                                                    Status:{" "}
-                                                    <span className="font-semibold text-slate-500">
-                                                        Väntar på GNSS-data
-                                                    </span>
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </>
                         ) : (
-                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                Inga arbetsområden eller geofence-data hittades.
-                            </p>
+                            <>
+                                {latestRows.length > 0 &&
+                                    latestRows.map((row, index) => {
+                                        const isOutside =
+                                            row.geofence_status === "outside";
+
+                                        const distanceToBorder =
+                                            Number(row.area_location_radius_m) -
+                                            Number(row.distance_m);
+
+                                        return (
+                                            <div
+                                                key={`${getGeofenceRowKey(row)}-${index}`}
+                                                className={`rounded-xl border p-4 text-sm ${getStatusCardClass(
+                                                    row.geofence_status,
+                                                )}`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className="rounded-xl bg-white/70 p-2 dark:bg-slate-950/40">
+                                                        {isOutside ? (
+                                                            <AlertCircle className="h-5 w-5" />
+                                                        ) : (
+                                                            <CheckCircle2 className="h-5 w-5" />
+                                                        )}
+                                                    </div>
+
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-semibold">
+                                                            Device{" "}
+                                                            {row.device_ID}
+                                                        </p>
+
+                                                        <p className="mt-1">
+                                                            Status:{" "}
+                                                            <span className="font-semibold">
+                                                                {getStatusText(
+                                                                    row.geofence_status,
+                                                                )}
+                                                            </span>
+                                                        </p>
+
+                                                        <p>
+                                                            Avstånd från
+                                                            centrum:{" "}
+                                                            <span className="font-semibold">
+                                                                {row.distance_m}{" "}
+                                                                m
+                                                            </span>
+                                                        </p>
+
+                                                        {isOutside ? (
+                                                            <p>
+                                                                Utanför gränsen:{" "}
+                                                                <span className="font-semibold">
+                                                                    {
+                                                                        row.outside_by_m
+                                                                    }{" "}
+                                                                    m
+                                                                </span>
+                                                            </p>
+                                                        ) : (
+                                                            <p>
+                                                                Kvar till gräns:{" "}
+                                                                <span className="font-semibold">
+                                                                    {Math.max(
+                                                                        0,
+                                                                        distanceToBorder,
+                                                                    )}{" "}
+                                                                    m
+                                                                </span>
+                                                            </p>
+                                                        )}
+
+                                                        <p>
+                                                            Tillåten radie:{" "}
+                                                            <span className="font-semibold">
+                                                                {
+                                                                    row.area_location_radius_m
+                                                                }{" "}
+                                                                m
+                                                            </span>
+                                                        </p>
+
+                                                        <p>
+                                                            Accuracy:{" "}
+                                                            <span className="font-semibold">
+                                                                {row.acc} m
+                                                            </span>
+                                                        </p>
+
+                                                        <p className="mt-2 text-xs opacity-80">
+                                                            Tid:{" "}
+                                                            {row.data_timestamp}
+                                                        </p>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                loadAlertHistory(
+                                                                    row.device_ID,
+                                                                )
+                                                            }
+                                                            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-current/20 bg-white/60 px-3 py-2 text-xs font-semibold transition hover:bg-white/90 dark:bg-slate-950/30 dark:hover:bg-slate-950/50"
+                                                        >
+                                                            <History className="h-4 w-4" />
+                                                            Visa alert-historik
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                {devicesWithoutGeofence.length > 0 && (
+                                    <>
+                                        <p className="rounded-xl border border-dashed border-blue-300 bg-blue-500/10 p-4 text-sm text-blue-700 dark:border-blue-800 dark:text-blue-300">
+                                            Dessa devices har GNSS-position men
+                                            saknar arbetsområde/geofence.
+                                        </p>
+
+                                        {devicesWithoutGeofence.map(
+                                            (device, index) => {
+                                                const deviceId =
+                                                    getPointDeviceId(device);
+
+                                                return (
+                                                    <div
+                                                        key={`device-without-geofence-card-${deviceId ?? index}`}
+                                                        className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div className="rounded-xl bg-blue-500/10 p-2">
+                                                                <Smartphone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                                            </div>
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="font-semibold text-slate-950 dark:text-white">
+                                                                    {getDeviceName(
+                                                                        device,
+                                                                    )}
+                                                                </p>
+
+                                                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                                    ID{" "}
+                                                                    {deviceId ??
+                                                                        "N/A"}
+                                                                </p>
+
+                                                                <p className="mt-2">
+                                                                    Status:{" "}
+                                                                    <span className="font-semibold text-slate-500">
+                                                                        Ingen
+                                                                        geofence
+                                                                        kopplad
+                                                                    </span>
+                                                                </p>
+
+                                                                <p>
+                                                                    Accuracy:{" "}
+                                                                    <span className="font-semibold">
+                                                                        {device.acc ??
+                                                                            "N/A"}{" "}
+                                                                        m
+                                                                    </span>
+                                                                </p>
+
+                                                                <p className="mt-2 text-xs opacity-80">
+                                                                    Tid:{" "}
+                                                                    {formatTimestamp(
+                                                                        device.data_timestamp ??
+                                                                            device.created_at,
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            },
+                                        )}
+                                    </>
+                                )}
+
+                                {latestRows.length === 0 &&
+                                    devicesWithoutGeofence.length === 0 &&
+                                    workAreas.length > 0 && (
+                                        <>
+                                            <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                                Arbetsområden finns, men ingen
+                                                GNSS-data har kommit in ännu.
+                                            </p>
+
+                                            {workAreas.map((area) => (
+                                                <div
+                                                    key={getAreaKeyFromWorkArea(
+                                                        area,
+                                                    )}
+                                                    className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="rounded-xl bg-emerald-500/10 p-2">
+                                                            <MapPinned className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-semibold text-slate-950 dark:text-white">
+                                                                {area.matchedAddress ||
+                                                                    "Sparat arbetsområde"}
+                                                            </p>
+
+                                                            <p className="mt-2">
+                                                                Device:{" "}
+                                                                <span className="font-semibold">
+                                                                    {getAreaDeviceLabel(
+                                                                        area,
+                                                                    )}
+                                                                </span>
+                                                            </p>
+
+                                                            <p>
+                                                                Radie:{" "}
+                                                                <span className="font-semibold">
+                                                                    {
+                                                                        area.circle_radius_m
+                                                                    }{" "}
+                                                                    m
+                                                                </span>
+                                                            </p>
+
+                                                            <p>
+                                                                Status:{" "}
+                                                                <span className="font-semibold text-slate-500">
+                                                                    Väntar på
+                                                                    GNSS-data
+                                                                </span>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
+
+                                {latestRows.length === 0 &&
+                                    devicesWithoutGeofence.length === 0 &&
+                                    workAreas.length === 0 && (
+                                        <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                            Inga arbetsområden, geofence-data
+                                            eller GNSS-positioner hittades.
+                                        </p>
+                                    )}
+                            </>
                         )}
                     </div>
                 </div>
@@ -915,6 +1174,7 @@ export default function GeofenceDashboard() {
                             <FitMapToGeofences
                                 rows={latestRows}
                                 workAreas={workAreas}
+                                devicePositions={devicesWithoutGeofence}
                             />
 
                             {workAreas.map((area) => {
@@ -1088,6 +1348,48 @@ export default function GeofenceDashboard() {
                                     </Fragment>
                                 );
                             })}
+
+                            {devicesWithoutGeofence.map((device, index) => {
+                                const lat = normalizeNumber(device.lat);
+                                const lon = normalizeNumber(device.lon);
+                                const deviceId = getPointDeviceId(device);
+
+                                if (lat === null || lon === null) {
+                                    return null;
+                                }
+
+                                return (
+                                    <Marker
+                                        key={`device-no-geofence-${deviceId ?? index}`}
+                                        position={[lat, lon]}
+                                    >
+                                        <Popup>
+                                            <div>
+                                                <p className="font-medium">
+                                                    {getDeviceName(device)}
+                                                </p>
+
+                                                <p>ID: {deviceId ?? "N/A"}</p>
+
+                                                <p>Ingen geofence kopplad</p>
+
+                                                <p>
+                                                    Accuracy:{" "}
+                                                    {device.acc ?? "N/A"} m
+                                                </p>
+
+                                                <p>
+                                                    Tid:{" "}
+                                                    {formatTimestamp(
+                                                        device.data_timestamp ??
+                                                            device.created_at,
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </Popup>
+                                    </Marker>
+                                );
+                            })}
                         </MapContainer>
                     </div>
                 </div>
@@ -1187,6 +1489,17 @@ export default function GeofenceDashboard() {
                                     )}
                                     .
                                 </p>
+
+                                {devicesWithoutGeofence.length > 0 && (
+                                    <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                        Du har även{" "}
+                                        <span className="font-bold">
+                                            {devicesWithoutGeofence.length}
+                                        </span>{" "}
+                                        device med GNSS-position men utan
+                                        geofence.
+                                    </p>
+                                )}
 
                                 {latestRows.length === 0 &&
                                     workAreas.length > 0 && (

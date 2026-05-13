@@ -10,7 +10,7 @@ const stockholmLon = 18.01624;
 const randomOffset = () => (Math.random() - 0.5) * 0.02;
 
 const gnssPayload = JSON.stringify({
-    device_ID: 123456,
+    device_ID: 456789,
     lat: stockholmLat + randomOffset(),
     lon: stockholmLon + randomOffset(),
     acc: Number((Math.random() * 8 + 2).toFixed(2)),
