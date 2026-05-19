@@ -105,6 +105,22 @@ function normalizeGnssResponse(result) {
     return [];
 }
 
+function normalizeDevicesResponse(result) {
+    if (Array.isArray(result?.devices)) return result.devices;
+    if (Array.isArray(result?.data)) return result.data;
+    if (Array.isArray(result?.rows)) return result.rows;
+
+    return [];
+}
+
+function isCellularDevice(device) {
+    return (
+        String(device?.data_transport ?? "")
+            .trim()
+            .toLowerCase() === "cellular"
+    );
+}
+
 function getLatestDevicePositions(rows) {
     const latestByDevice = new Map();
 
@@ -503,22 +519,41 @@ export default function WorkAreas() {
     const user = storedUser ? JSON.parse(storedUser) : null;
     const userId = user?.user_ID || null;
 
+    const cellularDevices = useMemo(() => {
+        return devices.filter((device) => isCellularDevice(device));
+    }, [devices]);
+
+    const cellularDeviceIds = useMemo(() => {
+        return new Set(
+            cellularDevices.map((device) => String(device.device_ID)),
+        );
+    }, [cellularDevices]);
+
     const latestDevicePositions = useMemo(() => {
         return getLatestDevicePositions(devicePositions);
     }, [devicePositions]);
 
+    const latestCellularDevicePositions = useMemo(() => {
+        if (cellularDeviceIds.size === 0) return [];
+
+        return latestDevicePositions.filter((devicePosition) => {
+            const deviceId = getPointDeviceId(devicePosition);
+            return cellularDeviceIds.has(String(deviceId));
+        });
+    }, [latestDevicePositions, cellularDeviceIds]);
+
     const selectedDevice = useMemo(() => {
-        return devices.find(
+        return cellularDevices.find(
             (device) => String(device.device_ID) === String(selectedDeviceId),
         );
-    }, [devices, selectedDeviceId]);
+    }, [cellularDevices, selectedDeviceId]);
 
     const selectedDevicePosition = useMemo(() => {
-        return latestDevicePositions.find(
+        return latestCellularDevicePositions.find(
             (device) =>
                 String(getPointDeviceId(device)) === String(selectedDeviceId),
         );
-    }, [latestDevicePositions, selectedDeviceId]);
+    }, [latestCellularDevicePositions, selectedDeviceId]);
 
     const selectedWorkArea = useMemo(() => {
         return workAreas.find(
@@ -529,12 +564,12 @@ export default function WorkAreas() {
     const selectedWorkAreaDevicePosition = useMemo(() => {
         if (!selectedWorkArea) return null;
 
-        return latestDevicePositions.find(
+        return latestCellularDevicePositions.find(
             (device) =>
                 String(getPointDeviceId(device)) ===
                 String(selectedWorkArea.device_ID),
         );
-    }, [latestDevicePositions, selectedWorkArea]);
+    }, [latestCellularDevicePositions, selectedWorkArea]);
 
     function getAreaDeviceLabel(area) {
         const device = devices.find(
@@ -596,7 +631,7 @@ export default function WorkAreas() {
             setDeviceLoading(true);
             setDeviceError("");
 
-            const response = await axios.get(`/api/device/all/user/${userId}`);
+            const response = await axios.get(`/api/device/get/user/${userId}`);
             const result = response.data;
 
             console.log("Devices response:", result);
@@ -610,28 +645,29 @@ export default function WorkAreas() {
                 return;
             }
 
-            const loadedDevices = Array.isArray(result.devices)
-                ? result.devices
-                : [];
+            const loadedDevices = normalizeDevicesResponse(result);
+            const loadedCellularDevices = loadedDevices.filter((device) =>
+                isCellularDevice(device),
+            );
 
             setDevices(loadedDevices);
 
-            if (loadedDevices.length > 0) {
+            if (loadedCellularDevices.length > 0) {
                 setSelectedDeviceId((current) => {
-                    const currentExists = loadedDevices.some(
+                    const currentExists = loadedCellularDevices.some(
                         (device) =>
                             String(device.device_ID) === String(current),
                     );
 
                     if (current && currentExists) return current;
 
-                    return String(loadedDevices[0].device_ID);
+                    return String(loadedCellularDevices[0].device_ID);
                 });
 
                 setDeviceError("");
             } else {
                 setSelectedDeviceId("");
-                setDeviceError("Inga registrerade enheter hittades.");
+                setDeviceError("Inga cellular-enheter hittades.");
             }
         } catch (error) {
             console.error("Failed to load user devices:", error);
@@ -690,7 +726,7 @@ export default function WorkAreas() {
             setWorkAreasError("");
 
             const response = await axios.get(
-                `/api/device/get/location_areas/${userId}`,
+                `/api/device/area-location/get/${userId}`,
             );
 
             const result = response.data;
@@ -792,7 +828,35 @@ export default function WorkAreas() {
         };
     }, [userId]);
 
+    useEffect(() => {
+        if (!selectedDeviceId) return;
+
+        const currentStillExists = cellularDevices.some(
+            (device) => String(device.device_ID) === String(selectedDeviceId),
+        );
+
+        if (!currentStillExists) {
+            setSelectedDeviceId(
+                cellularDevices.length > 0
+                    ? String(cellularDevices[0].device_ID)
+                    : "",
+            );
+
+            setSelectedLocation(null);
+        }
+    }, [cellularDevices, selectedDeviceId]);
+
     function handleDeviceChange(newDeviceId) {
+        const nextDevice = cellularDevices.find(
+            (device) => String(device.device_ID) === String(newDeviceId),
+        );
+
+        if (!nextDevice) {
+            setSubmitError("Välj en cellular-device först.");
+            setSubmitSuccess("");
+            return;
+        }
+
         setSelectedDeviceId(newDeviceId);
         setSubmitError("");
         setSubmitSuccess("");
@@ -834,15 +898,22 @@ export default function WorkAreas() {
             return;
         }
 
-        if (!selectedLocation) {
+        if (!selectedDeviceId) {
+            setSubmitError("Välj en cellular-device först.");
+            return;
+        }
+
+        if (!selectedDevice || !isCellularDevice(selectedDevice)) {
             setSubmitError(
-                "Sök och välj en plats först, eller använd devicens senaste position.",
+                "Arbetsområden kan bara skapas för cellular-devices.",
             );
             return;
         }
 
-        if (!selectedDeviceId) {
-            setSubmitError("Välj en registrerad enhet först.");
+        if (!selectedLocation) {
+            setSubmitError(
+                "Sök och välj en plats först, eller använd devicens senaste position.",
+            );
             return;
         }
 
@@ -865,7 +936,7 @@ export default function WorkAreas() {
         try {
             setSubmitLoading(true);
 
-            const res = await fetch("/api/device/add/location_area", {
+            const res = await fetch("/api/device/area-location/add", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -974,8 +1045,8 @@ export default function WorkAreas() {
                 </h1>
 
                 <p className="mt-2 max-w-2xl text-base text-slate-600 dark:text-slate-400">
-                    Skapa zoner där dina registrerade enheter får vara och se
-                    tydligt vilket område som tillhör vilken device.
+                    Skapa zoner där dina enheter får vara och följ dem på
+                    kartan.
                 </p>
             </div>
 
@@ -993,9 +1064,8 @@ export default function WorkAreas() {
                                 </h2>
 
                                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                    Device visas som grå punkt med namn på
-                                    kartan. Klicka på ett arbetsområde för att
-                                    markera det grönt.
+                                    Välj den device som arbetsområdet ska
+                                    kopplas till.
                                 </p>
                             </div>
                         </div>
@@ -1010,17 +1080,20 @@ export default function WorkAreas() {
                                 onChange={(e) =>
                                     handleDeviceChange(e.target.value)
                                 }
-                                disabled={deviceLoading || devices.length === 0}
+                                disabled={
+                                    deviceLoading ||
+                                    cellularDevices.length === 0
+                                }
                                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-slate-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
                             >
                                 {deviceLoading ? (
                                     <option value="">Laddar enheter...</option>
-                                ) : devices.length === 0 ? (
+                                ) : cellularDevices.length === 0 ? (
                                     <option value="">
-                                        Inga enheter hittades
+                                        Inga cellular-enheter hittades
                                     </option>
                                 ) : (
-                                    devices.map((device) => (
+                                    cellularDevices.map((device) => (
                                         <option
                                             key={device.device_ID}
                                             value={device.device_ID}
@@ -1162,6 +1235,13 @@ export default function WorkAreas() {
                     </div>
 
                     <LocationSearchCard
+                        title="Skapa arbetsområde"
+                        description="Sök en adress och använd platsen som centrum för ett geofence."
+                        label="Adress"
+                        placeholder="Drottninggatan 1 Stockholm"
+                        matchedTitle="Matchad adress"
+                        tone="emerald"
+                        icon={MapPinned}
                         onLocationSelected={(location) => {
                             setSelectedLocation({
                                 ...location,
@@ -1267,7 +1347,8 @@ export default function WorkAreas() {
                                 disabled={
                                     submitLoading ||
                                     !selectedLocation ||
-                                    !selectedDeviceId
+                                    !selectedDeviceId ||
+                                    !selectedDevice
                                 }
                                 className="mt-5 w-full"
                             >
@@ -1302,7 +1383,7 @@ export default function WorkAreas() {
 
                             <FitMapToWorkAreas
                                 workAreas={workAreas}
-                                devicePositions={latestDevicePositions}
+                                devicePositions={latestCellularDevicePositions}
                                 selectedLocation={selectedLocation}
                             />
 
@@ -1320,86 +1401,92 @@ export default function WorkAreas() {
                                 focusRequest={focusWorkAreaRequest}
                             />
 
-                            {latestDevicePositions.map((device, index) => {
-                                const lat = Number(device.lat);
-                                const lon = Number(device.lon);
-                                const acc =
-                                    device.acc === null ||
-                                    device.acc === undefined
-                                        ? null
-                                        : Number(device.acc);
-                                const deviceId = getPointDeviceId(device);
+                            {latestCellularDevicePositions.map(
+                                (device, index) => {
+                                    const lat = Number(device.lat);
+                                    const lon = Number(device.lon);
+                                    const acc =
+                                        device.acc === null ||
+                                        device.acc === undefined
+                                            ? null
+                                            : Number(device.acc);
+                                    const deviceId = getPointDeviceId(device);
 
-                                if (
-                                    !Number.isFinite(lat) ||
-                                    !Number.isFinite(lon)
-                                ) {
-                                    return null;
-                                }
+                                    if (
+                                        !Number.isFinite(lat) ||
+                                        !Number.isFinite(lon)
+                                    ) {
+                                        return null;
+                                    }
 
-                                return (
-                                    <Fragment
-                                        key={`device-position-${deviceId ?? index}`}
-                                    >
-                                        {acc !== null &&
-                                            Number.isFinite(acc) && (
-                                                <Circle
-                                                    center={[lat, lon]}
-                                                    radius={Math.min(
-                                                        Math.max(acc, 3),
-                                                        250,
-                                                    )}
-                                                    pathOptions={{
-                                                        color: "#64748b",
-                                                        fillColor: "#94a3b8",
-                                                        fillOpacity: 0.08,
-                                                        weight: 1,
-                                                    }}
-                                                />
-                                            )}
-
-                                        <Marker
-                                            position={[lat, lon]}
-                                            icon={getDeviceMarkerIcon(
-                                                getDeviceLabel(device),
-                                            )}
-                                            opacity={0.92}
-                                            zIndexOffset={650}
+                                    return (
+                                        <Fragment
+                                            key={`device-position-${deviceId ?? index}`}
                                         >
-                                            <Popup>
-                                                <div>
-                                                    <p className="font-bold">
-                                                        Device-position
-                                                    </p>
-
-                                                    <p className="font-medium">
-                                                        {getDeviceFullLabel(
-                                                            device,
+                                            {acc !== null &&
+                                                Number.isFinite(acc) && (
+                                                    <Circle
+                                                        center={[lat, lon]}
+                                                        radius={Math.min(
+                                                            Math.max(acc, 3),
+                                                            250,
                                                         )}
-                                                    </p>
+                                                        pathOptions={{
+                                                            color: "#64748b",
+                                                            fillColor:
+                                                                "#94a3b8",
+                                                            fillOpacity: 0.08,
+                                                            weight: 1,
+                                                        }}
+                                                    />
+                                                )}
 
-                                                    <p>
-                                                        ID: {deviceId ?? "N/A"}
-                                                    </p>
+                                            <Marker
+                                                position={[lat, lon]}
+                                                icon={getDeviceMarkerIcon(
+                                                    getDeviceLabel(device),
+                                                )}
+                                                opacity={0.92}
+                                                zIndexOffset={650}
+                                            >
+                                                <Popup>
+                                                    <div>
+                                                        <p className="font-bold">
+                                                            Device-position
+                                                        </p>
 
-                                                    <p>
-                                                        Accuracy:{" "}
-                                                        {device.acc ?? "N/A"} m
-                                                    </p>
+                                                        <p className="font-medium">
+                                                            {getDeviceFullLabel(
+                                                                device,
+                                                            )}
+                                                        </p>
 
-                                                    <p>
-                                                        Tid:{" "}
-                                                        {formatTimestamp(
-                                                            device.data_timestamp ??
-                                                                device.created_at,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                            </Popup>
-                                        </Marker>
-                                    </Fragment>
-                                );
-                            })}
+                                                        <p>
+                                                            ID:{" "}
+                                                            {deviceId ?? "N/A"}
+                                                        </p>
+
+                                                        <p>
+                                                            Accuracy:{" "}
+                                                            {device.acc ??
+                                                                "N/A"}{" "}
+                                                            m
+                                                        </p>
+
+                                                        <p>
+                                                            Tid:{" "}
+                                                            {formatTimestamp(
+                                                                device.data_timestamp ??
+                                                                    device.created_at,
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                </Popup>
+                                            </Marker>
+                                        </Fragment>
+                                    );
+                                },
+                            )}
 
                             {selectedWorkArea &&
                                 selectedWorkAreaDevicePosition && (
@@ -1617,7 +1704,7 @@ export default function WorkAreas() {
                                         const isSelected =
                                             areaKey === selectedWorkAreaKey;
                                         const hasDevicePosition =
-                                            latestDevicePositions.some(
+                                            latestCellularDevicePositions.some(
                                                 (device) =>
                                                     String(
                                                         getPointDeviceId(

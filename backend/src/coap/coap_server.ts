@@ -8,11 +8,11 @@ import {
 } from "../api/api_server.js";
 import {
     get_device_arealocation,
-    add_device_zone_state,
-    get_last_device_zone_state,
-    add_device_zone_alert,
+    get_last_device_state,
     add_device_status,
     get_userID_by_deviceID,
+    add_device_state,
+    add_device_alert,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
 
@@ -206,13 +206,14 @@ export function startCoapServer() {
                         return res.end("GNSS data saved");
                     }
 
-                    const [device_data]: any = await get_last_device_zone_state(
+                    const [device_data]: any = await get_last_device_state(
                         sensorData.device_ID,
+                        "geofence",
                     );
 
                     console.log("device_data", device_data);
 
-                    const previousStatus = device_data?.status ?? null;
+                    const previousStatus = device_data?.status_now ?? null;
 
                     if (previousStatus && previousStatus !== geofence.status) {
                         console.log("Geofence status changed:", {
@@ -222,12 +223,25 @@ export function startCoapServer() {
                         });
 
                         try {
-                            await add_device_zone_alert(
-                                sensorData.device_ID,
-                                previousStatus,
-                                geofence.status,
-                                device_area_distance_m,
-                            );
+                            if (previousStatus == "outside") {
+                                await add_device_alert(
+                                    sensorData.device_ID,
+                                    "geofence",
+                                    previousStatus,
+                                    geofence.status,
+                                    device_area_distance_m,
+                                    "Coming from outside to inside",
+                                );
+                            } else {
+                                await add_device_alert(
+                                    sensorData.device_ID,
+                                    "geofence",
+                                    previousStatus,
+                                    geofence.status,
+                                    device_area_distance_m,
+                                    "Coming from inside to outside",
+                                );
+                            }
 
                             const alertPayload = {
                                 device_ID: Number(sensorData.device_ID),
@@ -258,8 +272,9 @@ export function startCoapServer() {
                         );
                     }
 
-                    await add_device_zone_state(
+                    await add_device_state(
                         Number(sensorData.device_ID),
+                        "geofence",
                         geofence.status,
                         device_area_distance_m,
                     );
@@ -340,6 +355,8 @@ export function startCoapServer() {
                     try {
                         const response = await add_device_status(
                             sensorData.device_ID,
+                            sensorData.battery_percent,
+                            sensorData.firmware_version,
                         );
 
                         console.log("response: ", response);

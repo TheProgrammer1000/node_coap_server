@@ -102,6 +102,34 @@ export async function sendLiveDeviceStatus(
     console.log(`Emitted device:status to ${roomName}`);
 }
 
+export async function sendLiveMotionSample(
+    userId: string | number,
+    sample: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const sequence = Number((sample as any)?.sequence ?? 0);
+
+    /*
+        Viktigt för latency:
+        - fetchSockets() är användbart för debug
+        - men det ska inte köras varje motion-packet
+    */
+    if (sequence % 20 === 0) {
+        const socketsInRoom = await io.in(roomName).fetchSockets();
+
+        console.log("Motion sample live emit");
+        console.log("Room:", roomName);
+        console.log("Sockets in room:", socketsInRoom.length);
+        console.log("Sequence:", sequence);
+    }
+
+    io.to(roomName).emit("motion:new-sample", sample);
+}
 export function startApiServer() {
     const app = express();
 
@@ -157,6 +185,69 @@ export function startApiServer() {
             socket.emit("socket:joined", {
                 room: roomName,
             });
+        });
+
+        socket.on("motion:sample", async (payload) => {
+            if (!payload) {
+                console.warn("Invalid motion sample: missing payload");
+                return;
+            }
+
+            if (!payload.userId) {
+                console.warn("Invalid motion sample: missing userId", payload);
+                return;
+            }
+
+            if (!payload.deviceId) {
+                console.warn(
+                    "Invalid motion sample: missing deviceId",
+                    payload,
+                );
+                return;
+            }
+
+            if (!payload.quaternion) {
+                console.warn(
+                    "Invalid motion sample: missing quaternion",
+                    payload,
+                );
+                return;
+            }
+
+            const sample = {
+                deviceId: payload.deviceId,
+                receivedAt: new Date().toISOString(),
+
+                version: payload.version,
+                sequence: payload.sequence,
+                rawHex: payload.rawHex,
+
+                quaternion: {
+                    w: payload.quaternion.w,
+                    x: payload.quaternion.x,
+                    y: payload.quaternion.y,
+                    z: payload.quaternion.z,
+                },
+
+                euler: {
+                    rollDeg: payload.euler?.rollDeg,
+                    pitchDeg: payload.euler?.pitchDeg,
+                    yawDeg: payload.euler?.yawDeg,
+                },
+
+                norm: payload.norm,
+            };
+
+            const sequence = Number(payload.sequence ?? 0);
+
+            if (sequence % 20 === 0) {
+                console.log("Motion sample received from gateway");
+                console.log("From socket:", socket.id);
+                console.log("User:", payload.userId);
+                console.log("Sequence:", sequence);
+            }
+
+            await sendLiveMotionSample(payload.userId, sample);
         });
 
         socket.on("leave-user-room", (userId) => {

@@ -12,11 +12,29 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function LocationSearchCard({ onLocationSelected }) {
+export default function LocationSearchCard({
+    onLocationSelected,
+
+    title = "Sök plats",
+    description = "Sök en adress och använd platsen i kartan.",
+    label = "Adress",
+    placeholder = "Drottninggatan 1 Stockholm",
+
+    icon = MapPinned,
+    tone = "emerald",
+
+    matchedTitle = "Matchad adress",
+    buttonText = "Sök",
+    loadingText = "Söker",
+}) {
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [matchedAddress, setMatchedAddress] = useState("");
+
+    const Icon = icon;
+
+    const toneClasses = getToneClasses(tone);
 
     async function handleSearch(e) {
         e.preventDefault();
@@ -32,7 +50,7 @@ export default function LocationSearchCard({ onLocationSelected }) {
         setLoading(true);
 
         try {
-            const res = await fetch("/api/area-location/geocode", {
+            const res = await fetch("/api/geocode", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -76,18 +94,19 @@ export default function LocationSearchCard({ onLocationSelected }) {
     return (
         <Card className="w-full border-slate-200 bg-white/90 text-slate-950 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 dark:text-white">
             <CardHeader className="space-y-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20">
-                    <MapPinned className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-xl ${toneClasses.iconBg}`}
+                >
+                    <Icon className={`h-6 w-6 ${toneClasses.iconText}`} />
                 </div>
 
                 <div>
                     <CardTitle className="text-2xl text-slate-900 dark:text-white">
-                        Skapa arbetsområde
+                        {title}
                     </CardTitle>
 
                     <CardDescription className="text-slate-600 dark:text-slate-400">
-                        Sök en adress och använd platsen som centrum för ett
-                        geofence.
+                        {description}
                     </CardDescription>
                 </div>
             </CardHeader>
@@ -99,14 +118,14 @@ export default function LocationSearchCard({ onLocationSelected }) {
                             htmlFor="location-query"
                             className="text-slate-800 dark:text-slate-200"
                         >
-                            Adress
+                            {label}
                         </Label>
 
                         <div className="flex gap-2">
                             <Input
                                 id="location-query"
                                 type="text"
-                                placeholder="Drottninggatan 1 Stockholm"
+                                placeholder={placeholder}
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 className="border-slate-300 bg-white text-slate-950 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
@@ -116,12 +135,12 @@ export default function LocationSearchCard({ onLocationSelected }) {
                                 {loading ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Söker
+                                        {loadingText}
                                     </>
                                 ) : (
                                     <>
                                         <Search className="mr-2 h-4 w-4" />
-                                        Sök
+                                        {buttonText}
                                     </>
                                 )}
                             </Button>
@@ -129,13 +148,15 @@ export default function LocationSearchCard({ onLocationSelected }) {
                     </div>
 
                     {matchedAddress && (
-                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                        <div
+                            className={`rounded-lg border px-3 py-3 text-sm ${toneClasses.successBox}`}
+                        >
                             <div className="flex items-start gap-2">
-                                <MapPinned className="mt-0.5 h-4 w-4 shrink-0" />
+                                <Icon className="mt-0.5 h-4 w-4 shrink-0" />
 
                                 <div>
                                     <p className="font-medium">
-                                        Matchad adress
+                                        {matchedTitle}
                                     </p>
                                     <p className="mt-1">{matchedAddress}</p>
                                 </div>
@@ -155,4 +176,31 @@ export default function LocationSearchCard({ onLocationSelected }) {
             </CardContent>
         </Card>
     );
+}
+
+function getToneClasses(tone) {
+    if (tone === "blue") {
+        return {
+            iconBg: "bg-blue-500/15 dark:bg-blue-500/20",
+            iconText: "text-blue-600 dark:text-blue-400",
+            successBox:
+                "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+        };
+    }
+
+    if (tone === "violet") {
+        return {
+            iconBg: "bg-violet-500/15 dark:bg-violet-500/20",
+            iconText: "text-violet-600 dark:text-violet-400",
+            successBox:
+                "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+        };
+    }
+
+    return {
+        iconBg: "bg-emerald-500/15 dark:bg-emerald-500/20",
+        iconText: "text-emerald-600 dark:text-emerald-400",
+        successBox:
+            "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    };
 }

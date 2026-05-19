@@ -17,19 +17,20 @@ export async function register_user(
     show_username: string,
     username: string,
     password: string,
+    email: string,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL register_user(?, ?, ?);",
-        [show_username, username, password],
+        "CALL register_user(?, ?, ?, ?);",
+        [show_username, username, password, email],
     );
 
     return result[0];
 }
 
-export async function login_user(username: string) {
+export async function login_user(username: string, email: string) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL login_user(?);",
-        [username],
+        "CALL login_user(?, ?);",
+        [username, email],
     );
 
     return result[0];
@@ -75,10 +76,11 @@ export async function add_new_device(
     user_ID: number,
     device_name: string,
     device_serienumber: string,
+    data_transport: string,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_new_device(?, ?, ?);",
-        [user_ID, device_name, device_serienumber],
+        "CALL add_new_device(?, ?, ?, ?);",
+        [user_ID, device_name, device_serienumber, data_transport],
     );
 
     console.log(result);
@@ -163,10 +165,13 @@ export async function get_device_arealocation(device_ID: number) {
     return result[0];
 }
 
-export async function get_last_device_zone_state(device_ID: number) {
+export async function get_last_device_state(
+    device_ID: number,
+    status_type: string,
+) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_last_device_zone_state(?);",
-        [device_ID],
+        "CALL get_last_device_state(?, ?);",
+        [device_ID, status_type],
     );
 
     console.log(result);
@@ -174,15 +179,33 @@ export async function get_last_device_zone_state(device_ID: number) {
     return result[0];
 }
 
-export async function add_device_zone_alert(
+export async function add_device_alert(
     device_ID: number,
+    status_type: string,
     from_status: string,
     to_status: string,
-    device_area_distance_m: number,
+    status_value: number,
+    reason: string,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_device_zone_alert(?, ?, ?, ?);",
-        [device_ID, from_status, to_status, device_area_distance_m],
+        "CALL add_device_alert(?, ?, ?, ?, ?, ?);",
+        [device_ID, status_type, from_status, to_status, status_value, reason],
+    );
+
+    console.log(result);
+
+    return result[0];
+}
+
+export async function add_device_state(
+    device_ID: number,
+    status_type: string,
+    status_now: string,
+    status_value: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_state(?, ?, ?, ?);",
+        [device_ID, status_type, status_now, status_value],
     );
 
     console.log(result);
@@ -201,10 +224,28 @@ export async function get_all_device_zone_alert(device_ID: number) {
     return result;
 }
 
-export async function add_device_status(device_ID: number) {
+export async function get_all_devices_alert_by_type(
+    device_ID: number,
+    status_type: string,
+) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_device_status(?);",
-        [device_ID],
+        "CALL get_all_devices_alert_by_type(?, ?);",
+        [device_ID, status_type],
+    );
+
+    console.log(result);
+
+    return result;
+}
+
+export async function add_device_status(
+    device_ID: number,
+    battery_percent: number,
+    firmware_version: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_status(?, ?, ?);",
+        [device_ID, battery_percent, firmware_version],
     );
 
     console.log(result);
@@ -233,6 +274,97 @@ export async function get_user_devices_status(user_ID: number) {
 export async function get_device_user_by_userID(user_ID: number) {
     const [result] = await pool.query<RowDataPacket[][]>(
         "CALL get_device_user_by_userID(?);",
+        [user_ID],
+    );
+
+    return result[0];
+}
+
+export async function add_device_ble_data_session(device_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_ble_data_session(?);",
+        [device_ID],
+    );
+
+    return result[0];
+}
+
+export async function add_device_ble_motion_data(
+    device_ID: number,
+    quat_x: number,
+    quat_y: number,
+    quat_z: number,
+    quat_w: number,
+    data_packet: number,
+    firmware_version: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_ble_motion_data(?,?,?,?,?,?,?);",
+        [
+            device_ID,
+            quat_x,
+            quat_y,
+            quat_z,
+            quat_w,
+            data_packet,
+            firmware_version,
+        ],
+    );
+
+    console.log(result);
+
+    return result[0];
+}
+
+export async function update_device_ble_data_session(device_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL update_device_ble_data_session(?);",
+        [device_ID],
+    );
+
+    console.log(result);
+
+    return result[0];
+}
+
+export async function get_device_ble_motion_session_data_by_user(
+    user_ID: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_device_ble_motion_session_data_by_user(?);",
+        [user_ID],
+    );
+
+    return result[0];
+}
+
+export async function get_all_device_ble(user_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_all_device_ble(?);",
+        [user_ID],
+    );
+
+    return result[0];
+}
+
+export async function find_or_create_oauth_user(
+    show_username: string,
+    username: string,
+    email: string,
+    auth_provider: "google" | "microsoft",
+    provider_user_id: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL find_or_create_oauth_user(?, ?, ?, ?, ?);",
+        [show_username, username, email, auth_provider, provider_user_id],
+    );
+
+    return result[0];
+}
+
+export async function get_user_devices_with_status(user_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_user_devices_with_status(?);",
         [user_ID],
     );
 

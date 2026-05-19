@@ -1,59 +1,59 @@
 import { Router } from "express";
-import {} from "../../db/db.js";
+import {
+    add_device_arealocation,
+    get_user_arealocations,
+} from "../../db/db.js";
 
-import fetch from "node-fetch";
-
-import { device_param } from "../../types.js";
+import { work_area_payload } from "../../types.js";
 
 const router = Router();
 
-router.post("/geocode", async (req, res) => {
-    const geoarea = req.body.query;
-
-    console.log("Has API key:", !!process.env.GEOAPIFY_API_KEY);
-    // console.log("geoarea: ", geoarea);
-
-    const geo_params = new URLSearchParams({
-        text: geoarea,
-        filter: "countrycode:se",
-        format: "geojson",
-        limit: "5",
-        lang: "sv",
-        apiKey: process.env.GEOAPIFY_API_KEY as string,
-    });
-
-    const geoapify_url = `https://api.geoapify.com/v1/geocode/search?${geo_params.toString()}`;
-
+router.post("/add", async (req, res) => {
     try {
-        var requestOptions = {
-            method: "GET",
-        };
+        const payload: work_area_payload = req.body;
 
-        const response = await fetch(geoapify_url, requestOptions);
-        const data: any = await response.json();
+        console.log("payload: ", payload);
 
-        console.log(data.features[0].properties.formatted);
+        const response = await add_device_arealocation(
+            payload.user_ID,
+            payload.device_ID,
+            payload.lon,
+            payload.lat,
+            payload.circle_radius_m,
+            payload.matchedAddress,
+        );
 
-        const matched_address = data.features[0].properties.formatted;
-        // [longitude, latitude]
-        const coordinates = data.features[0].geometry.coordinates;
-
-        const geo_obj = {
-            success: true,
-            lat: coordinates[1],
-            lon: coordinates[0],
-            provider: "geoapify",
-            matched_address: matched_address,
-        };
-
-        console.log(geo_obj);
-
-        res.json(geo_obj);
-    } catch (error) {
-        console.error("Geocode backend error:", error);
+        console.log(response);
+        res.json({ success: true, data: response });
+    } catch (err) {
+        console.error("Failed to insert device location area ", err);
         res.status(500).json({
             success: false,
-            msg: "Serverfel vid geocoding",
+            message: "Failed to insert device location area",
+        });
+    }
+});
+
+router.get("/get/:user_ID", async (req, res) => {
+    try {
+        const user_ID = Number(req.params.user_ID);
+
+        const data = await get_user_arealocations(user_ID);
+
+        if (data.length > 0) {
+            res.json({ success: true, devices: data });
+        } else {
+            res.json({
+                success: false,
+                msg: "No userid attach to area locations",
+            });
+        }
+    } catch (error) {
+        console.error("Failed to get area locations", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to get area locations",
         });
     }
 });

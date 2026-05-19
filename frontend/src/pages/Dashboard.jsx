@@ -38,12 +38,27 @@ L.Icon.Default.mergeOptions({
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const ONLINE_THRESHOLD_MS = 7 * 60 * 1000;
+const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 const WEAK_ACCURACY_THRESHOLD = 50;
 const HISTORY_LIMIT = 5;
 
 function getPointDeviceId(point) {
     return point?.device_ID ?? point?.device_id ?? null;
+}
+
+function normalizeTransport(value) {
+    const transport = String(value || "cellular").toLowerCase();
+
+    if (transport === "ble") return "ble";
+    return "cellular";
+}
+
+function isCellularDevice(device) {
+    return normalizeTransport(device?.data_transport) === "cellular";
+}
+
+function filterCellularDevices(devices) {
+    return devices.filter((device) => isCellularDevice(device));
 }
 
 function hasValidPosition(device) {
@@ -98,6 +113,14 @@ function getAgeMs(timestamp) {
 }
 
 function getDeviceStatus(point) {
+    const explicitStatus = String(
+        point?.connection_status ?? point?.status ?? "",
+    ).toLowerCase();
+
+    if (explicitStatus === "online" || explicitStatus === "offline") {
+        return explicitStatus;
+    }
+
     const lastSeen = getDeviceLastSeen(point);
     const ageMs = getAgeMs(lastSeen);
 
@@ -244,9 +267,9 @@ function formatPositionCount(count) {
 }
 
 function formatWaitingForGnssCount(count) {
-    if (count === 0) return "Alla devices har GNSS-position.";
-    if (count === 1) return "1 device väntar på första GNSS-position.";
-    return `${count} devices väntar på första GNSS-position.`;
+    if (count === 0) return "Alla cellular devices har GNSS-position.";
+    if (count === 1) return "1 cellular device väntar på första GNSS-position.";
+    return `${count} cellular devices väntar på första GNSS-position.`;
 }
 
 function getHistoryButtonLabel(showHistory, count) {
@@ -299,6 +322,11 @@ function normalizeRegisteredDevicesResponse(result) {
             {
                 device_ID: result.device_ID ?? result.device_id,
                 device_name: result.device_name ?? result.deviceName ?? null,
+                data_transport:
+                    result.data_transport ??
+                    result.dataTransport ??
+                    result.transport ??
+                    "cellular",
             },
         ];
     }
@@ -308,6 +336,11 @@ function normalizeRegisteredDevicesResponse(result) {
             {
                 device_ID: data.device_ID ?? data.device_id,
                 device_name: data.device_name ?? data.deviceName ?? null,
+                data_transport:
+                    data.data_transport ??
+                    data.dataTransport ??
+                    data.transport ??
+                    "cellular",
             },
         ];
     }
@@ -383,7 +416,10 @@ function groupHistoryByDevice(rows) {
             grouped[key] = [];
         }
 
-        grouped[key].push(row);
+        grouped[key].push({
+            ...row,
+            data_transport: "cellular",
+        });
     });
 
     Object.keys(grouped).forEach((deviceId) => {
@@ -406,6 +442,7 @@ function upsertDeviceHistoryPoint(previousHistory, newPoint) {
 
     const historyPoint = {
         ...newPoint,
+        data_transport: "cellular",
         data_timestamp:
             newPoint.data_timestamp ??
             newPoint.created_at ??
@@ -428,10 +465,29 @@ function mergeRegisteredDevicesWithTelemetry(
 ) {
     const deviceMap = new Map();
 
+    const cellularRegisteredDevices = filterCellularDevices(registeredDevices);
+    const cellularStatusRows = filterCellularDevices(statusRows);
+
+    const cellularDeviceIds = new Set([
+        ...cellularRegisteredDevices.map((device) =>
+            String(getPointDeviceId(device)),
+        ),
+        ...cellularStatusRows.map((device) => String(getPointDeviceId(device))),
+    ]);
+
+    function shouldUseRow(row) {
+        const deviceId = getPointDeviceId(row);
+
+        if (!deviceId) return false;
+
+        return cellularDeviceIds.has(String(deviceId));
+    }
+
     function upsert(row) {
         const deviceId = getPointDeviceId(row);
 
         if (!deviceId) return;
+        if (!shouldUseRow(row)) return;
 
         const key = String(deviceId);
         const existing = deviceMap.get(key) ?? {};
@@ -439,6 +495,7 @@ function mergeRegisteredDevicesWithTelemetry(
         deviceMap.set(key, {
             ...existing,
             ...row,
+            data_transport: "cellular",
             device_ID:
                 existing.device_ID ??
                 row.device_ID ??
@@ -460,12 +517,18 @@ function mergeRegisteredDevicesWithTelemetry(
                 existing.lastSeen ??
                 existing.device_status_last_seen ??
                 null,
+            battery_percent:
+                row.battery_percent ?? existing.battery_percent ?? null,
+            firmware_version:
+                row.firmware_version ?? existing.firmware_version ?? null,
+            connection_status:
+                row.connection_status ?? existing.connection_status ?? null,
         });
     }
 
-    registeredDevices.forEach(upsert);
+    cellularRegisteredDevices.forEach(upsert);
+    cellularStatusRows.forEach(upsert);
     gnssRows.forEach(upsert);
-    statusRows.forEach(upsert);
 
     return Array.from(deviceMap.values());
 }
@@ -475,6 +538,7 @@ function upsertLatestDevicePosition(previousDevices, newPoint) {
 
     const pointWithLastSeen = {
         ...newPoint,
+        data_transport: "cellular",
         last_seen: newPoint.last_seen ?? new Date().toISOString(),
         data_timestamp:
             newPoint.data_timestamp ??
@@ -493,6 +557,7 @@ function upsertLatestDevicePosition(previousDevices, newPoint) {
     const mergedDevice = {
         ...(existingDevice ?? {}),
         ...pointWithLastSeen,
+        data_transport: "cellular",
         device_ID:
             existingDevice?.device_ID ??
             pointWithLastSeen.device_ID ??
@@ -533,7 +598,18 @@ function upsertDeviceStatus(previousDevices, statusUpdate) {
 
         return {
             ...device,
+            data_transport: "cellular",
             last_seen: lastSeen,
+            battery_percent:
+                statusUpdate.battery_percent ?? device.battery_percent ?? null,
+            firmware_version:
+                statusUpdate.firmware_version ??
+                device.firmware_version ??
+                null,
+            connection_status:
+                statusUpdate.connection_status ??
+                statusUpdate.status ??
+                "online",
         };
     });
 
@@ -544,7 +620,14 @@ function upsertDeviceStatus(previousDevices, statusUpdate) {
     return sortByNewest([
         {
             device_ID: Number(deviceId),
+            data_transport: "cellular",
             last_seen: lastSeen,
+            battery_percent: statusUpdate.battery_percent ?? null,
+            firmware_version: statusUpdate.firmware_version ?? null,
+            connection_status:
+                statusUpdate.connection_status ??
+                statusUpdate.status ??
+                "online",
         },
         ...previousDevices,
     ]);
@@ -634,6 +717,7 @@ function FitMapToDevices({ devices }) {
 
 export default function Dashboard() {
     const navigate = useNavigate();
+    const cellularDeviceIdsRef = useRef(new Set());
 
     const storedUser = localStorage.getItem("user");
     const user = storedUser ? JSON.parse(storedUser) : null;
@@ -650,7 +734,27 @@ export default function Dashboard() {
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
     const [nowTick, setNowTick] = useState(Date.now());
 
-    const sortedDevices = useMemo(() => sortByNewest(devices), [devices]);
+    const sortedDevices = useMemo(() => {
+        return sortByNewest(filterCellularDevices(devices));
+    }, [devices]);
+
+    useEffect(() => {
+        cellularDeviceIdsRef.current = new Set(
+            sortedDevices.map((device) => String(getPointDeviceId(device))),
+        );
+    }, [sortedDevices]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        const interval = window.setInterval(() => {
+            loadDashboardData();
+        }, 20000);
+
+        return () => {
+            window.clearInterval(interval);
+        };
+    }, [userId]);
 
     const positionedDevices = useMemo(() => {
         return sortedDevices.filter((device) => hasValidPosition(device));
@@ -749,7 +853,7 @@ export default function Dashboard() {
             ] = await Promise.allSettled([
                 axios.get(`/api/device/user/${userId}`),
                 axios.get(`/api/device/gnss/user/${userId}`),
-                axios.get(`/api/device/get/status/${userId}`),
+                axios.get(`/api/device/get/user/status/${userId}`),
                 axios.get(`/api/device/gnss/user/history/${userId}`),
             ]);
 
@@ -781,20 +885,59 @@ export default function Dashboard() {
                     ? normalizeUserHistoryResponse(historyResponse.value.data)
                     : [];
 
-            setDeviceHistoryById(groupHistoryByDevice(historyRows));
+            const cellularStatusRows = filterCellularDevices(statusRows);
+            const cellularRegisteredRows =
+                filterCellularDevices(registeredRows);
+
+            const cellularDeviceIds = new Set([
+                ...cellularStatusRows.map((device) =>
+                    String(getPointDeviceId(device)),
+                ),
+                ...cellularRegisteredRows.map((device) =>
+                    String(getPointDeviceId(device)),
+                ),
+            ]);
+
+            const cellularGnssRows = gnssRows
+                .filter((row) =>
+                    cellularDeviceIds.has(String(getPointDeviceId(row))),
+                )
+                .map((row) => ({
+                    ...row,
+                    data_transport: "cellular",
+                }));
+
+            const cellularHistoryRows = historyRows
+                .filter((row) =>
+                    cellularDeviceIds.has(String(getPointDeviceId(row))),
+                )
+                .map((row) => ({
+                    ...row,
+                    data_transport: "cellular",
+                }));
+
+            setDeviceHistoryById(groupHistoryByDevice(cellularHistoryRows));
 
             const mergedRows = mergeRegisteredDevicesWithTelemetry(
-                registeredRows,
-                gnssRows,
-                statusRows,
+                cellularRegisteredRows,
+                cellularGnssRows,
+                cellularStatusRows,
             );
 
-            const sortedRows = sortByNewest(mergedRows);
+            const sortedRows = sortByNewest(filterCellularDevices(mergedRows));
 
             setDevices(sortedRows);
 
             setSelectedDeviceId((currentSelectedId) => {
-                if (currentSelectedId) return currentSelectedId;
+                const currentExists = sortedRows.some(
+                    (device) =>
+                        String(getPointDeviceId(device)) ===
+                        String(currentSelectedId),
+                );
+
+                if (currentSelectedId && currentExists) {
+                    return currentSelectedId;
+                }
 
                 return getPointDeviceId(sortedRows[0]) ?? null;
             });
@@ -802,7 +945,7 @@ export default function Dashboard() {
             setErrorMessage("");
         } catch (error) {
             console.error("Failed to load dashboard data:", error);
-            setErrorMessage("Kunde inte hämta device-data.");
+            setErrorMessage("Kunde inte hämta cellular device-data.");
         } finally {
             setLoading(false);
         }
@@ -866,18 +1009,36 @@ export default function Dashboard() {
         function handleNewPosition(newPoint) {
             console.log("Live GNSS position:", newPoint);
 
+            const incomingDeviceId = getPointDeviceId(newPoint);
+
+            if (
+                !incomingDeviceId ||
+                !cellularDeviceIdsRef.current.has(String(incomingDeviceId))
+            ) {
+                console.warn(
+                    "Ignored live GNSS update because device is not cellular:",
+                    newPoint,
+                );
+                return;
+            }
+
+            const cellularPoint = {
+                ...newPoint,
+                data_transport: "cellular",
+            };
+
             setDevices((previousDevices) =>
-                upsertLatestDevicePosition(previousDevices, newPoint),
+                upsertLatestDevicePosition(previousDevices, cellularPoint),
             );
 
             setDeviceHistoryById((previousHistory) =>
-                upsertDeviceHistoryPoint(previousHistory, newPoint),
+                upsertDeviceHistoryPoint(previousHistory, cellularPoint),
             );
 
             setSelectedDeviceId((currentSelectedId) => {
                 if (currentSelectedId) return currentSelectedId;
 
-                return getPointDeviceId(newPoint) ?? null;
+                return getPointDeviceId(cellularPoint) ?? null;
             });
 
             setLastLiveUpdate(
@@ -891,8 +1052,24 @@ export default function Dashboard() {
         function handleDeviceStatus(statusUpdate) {
             console.log("Live device status:", statusUpdate);
 
+            const incomingDeviceId = getPointDeviceId(statusUpdate);
+
+            if (
+                !incomingDeviceId ||
+                !cellularDeviceIdsRef.current.has(String(incomingDeviceId))
+            ) {
+                console.warn(
+                    "Ignored live status update because device is not cellular:",
+                    statusUpdate,
+                );
+                return;
+            }
+
             setDevices((previousDevices) =>
-                upsertDeviceStatus(previousDevices, statusUpdate),
+                upsertDeviceStatus(previousDevices, {
+                    ...statusUpdate,
+                    data_transport: "cellular",
+                }),
             );
 
             setLastLiveUpdate(
@@ -969,9 +1146,9 @@ export default function Dashboard() {
                     </h1>
 
                     <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400 md:text-base">
-                        Se var dina devices senast rapporterade sin position.
-                        Registrerade devices visas även innan första
-                        GNSS-positionen har kommit in.
+                        Se var dina cellular devices senast rapporterade sin
+                        position. Registrerade cellular devices visas även innan
+                        första GNSS-positionen har kommit in.
                     </p>
                 </div>
 
@@ -1024,7 +1201,7 @@ export default function Dashboard() {
                                         </h2>
 
                                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                            {dashboardStats.total} registrerade
+                                            {dashboardStats.total} cellular
                                             devices
                                         </p>
                                     </div>
@@ -1098,7 +1275,7 @@ export default function Dashboard() {
                         {loading ? (
                             <div className="flex h-[420px] items-center justify-center sm:h-[520px] lg:h-[calc(100dvh-230px)] lg:min-h-[650px]">
                                 <p className="text-slate-500">
-                                    Laddar device-data...
+                                    Laddar cellular device-data...
                                 </p>
                             </div>
                         ) : !hasRegisteredDevices ? (
@@ -1108,13 +1285,13 @@ export default function Dashboard() {
                                 </div>
 
                                 <h3 className="text-xl font-bold">
-                                    Ingen device registrerad
+                                    Ingen cellular device registrerad
                                 </h3>
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
-                                    Lägg till en device först. När den sedan
-                                    skickar GNSS-positioner via CoAP visas den
-                                    på kartan.
+                                    Lägg till en cellular device först. När den
+                                    sedan skickar GNSS-positioner via CoAP visas
+                                    den på kartan.
                                 </p>
 
                                 <button
@@ -1134,20 +1311,22 @@ export default function Dashboard() {
                                 </div>
 
                                 <h3 className="text-xl font-bold">
-                                    Device registrerad – väntar på första
-                                    GNSS-position
+                                    Cellular device registrerad – väntar på
+                                    första GNSS-position
                                 </h3>
 
                                 <p className="mt-2 max-w-md text-slate-500 dark:text-slate-400">
-                                    Du har registrerade devices, men ingen
-                                    GNSS-position har tagits emot ännu. Kartan
-                                    kommer automatiskt visa device-positionen
-                                    när första GNSS-paketet kommer in via CoAP.
+                                    Du har registrerade cellular devices, men
+                                    ingen GNSS-position har tagits emot ännu.
+                                    Kartan kommer automatiskt visa
+                                    device-positionen när första GNSS-paketet
+                                    kommer in via CoAP.
                                 </p>
 
                                 <div className="mt-5 w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left dark:border-slate-800 dark:bg-slate-950">
                                     <p className="text-sm font-bold">
-                                        Registrerade devices utan GNSS-position
+                                        Registrerade cellular devices utan
+                                        GNSS-position
                                     </p>
 
                                     <div className="mt-3 space-y-2">
@@ -1425,7 +1604,7 @@ export default function Dashboard() {
                                                                             </p>
 
                                                                             <p className="text-[11px] font-semibold">
-                                                                                {formatTimestamp(
+                                                                                {formatAge(
                                                                                     lastSeen,
                                                                                 )}
                                                                             </p>
@@ -1573,12 +1752,12 @@ export default function Dashboard() {
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <h2 className="text-xl font-bold">
-                                        Devices
+                                        Cellular devices
                                     </h2>
 
                                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                        Välj en device. Devices utan GNSS visas
-                                        tydligt som väntande.
+                                        Välj en cellular device. Devices utan
+                                        GNSS visas tydligt som väntande.
                                     </p>
                                 </div>
 
@@ -1591,7 +1770,7 @@ export default function Dashboard() {
                         <div className="max-h-[360px] min-h-[230px] overflow-y-auto p-4">
                             {loading ? (
                                 <p className="px-2 py-6 text-center text-sm text-slate-500">
-                                    Laddar devices...
+                                    Laddar cellular devices...
                                 </p>
                             ) : !hasRegisteredDevices ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center dark:border-slate-700 dark:bg-slate-950">
@@ -1600,12 +1779,12 @@ export default function Dashboard() {
                                     </div>
 
                                     <p className="font-bold">
-                                        Ingen device registrerad
+                                        Ingen cellular device registrerad
                                     </p>
 
                                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                                        Lägg till din första nRF-device för att
-                                        börja ta emot GNSS-data via CoAP och
+                                        Lägg till din första cellular device för
+                                        att börja ta emot GNSS-data via CoAP och
                                         visa positioner på kartan.
                                     </p>
 
@@ -1675,26 +1854,26 @@ export default function Dashboard() {
                                                                 </p>
 
                                                                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                                    {hasPosition
+                                                                    {lastSeen
                                                                         ? `Senast sedd: ${formatAge(
                                                                               lastSeen,
                                                                           )}`
-                                                                        : "Registrerad – väntar på första GNSS-position"}
+                                                                        : "Aldrig sedd av heartbeat ännu"}
                                                                 </p>
                                                             </div>
 
                                                             <div className="flex shrink-0 flex-col items-end gap-1.5">
-                                                                {hasPosition ? (
-                                                                    <span
-                                                                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
-                                                                            status,
-                                                                        )}`}
-                                                                    >
-                                                                        {getStatusLabel(
-                                                                            status,
-                                                                        )}
-                                                                    </span>
-                                                                ) : (
+                                                                <span
+                                                                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${getStatusClasses(
+                                                                        status,
+                                                                    )}`}
+                                                                >
+                                                                    {getStatusLabel(
+                                                                        status,
+                                                                    )}
+                                                                </span>
+
+                                                                {!hasPosition && (
                                                                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
                                                                         Väntar
                                                                         på
@@ -1733,9 +1912,11 @@ export default function Dashboard() {
                                                                 </p>
 
                                                                 <p className="truncate font-bold">
-                                                                    {formatTimestamp(
-                                                                        lastSeen,
-                                                                    )}
+                                                                    {lastSeen
+                                                                        ? formatAge(
+                                                                              lastSeen,
+                                                                          )
+                                                                        : "Aldrig"}
                                                                 </p>
                                                             </div>
                                                         </div>

@@ -118,6 +118,20 @@ function normalizeGnssResponse(result) {
     return [];
 }
 
+function normalizeAlertHistoryResponse(result) {
+    const data = result?.data;
+
+    if (Array.isArray(data) && Array.isArray(data[0])) {
+        return data[0];
+    }
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    return [];
+}
+
 function getLatestDevicePositions(rows) {
     const latestByDevice = new Map();
 
@@ -198,6 +212,15 @@ function getAlertKey(alert) {
     return String(
         alert.id ??
             `${alert.device_ID}-${alert.from_status}-${alert.to_status}-${alert.created_at}`,
+    );
+}
+
+function getAlertDistanceValue(alert) {
+    return (
+        alert.status_value ??
+        alert.device_area_distance_m ??
+        alert.deviceAreaDistanceM ??
+        null
     );
 }
 
@@ -372,15 +395,17 @@ function getAlertHistoryClass(alert) {
 }
 
 function getAlertHistoryDistanceText(alert) {
+    const distance = getAlertDistanceValue(alert);
+
     if (alert.to_status === "outside") {
-        return `Utanför gränsen: ${alert.device_area_distance_m} m`;
+        return `Utanför gränsen: ${distance ?? "N/A"} m`;
     }
 
     if (alert.to_status === "inside") {
-        return `Kvar till gräns: ${alert.device_area_distance_m} m`;
+        return `Kvar till gräns: ${distance ?? "N/A"} m`;
     }
 
-    return `Avstånd: ${alert.device_area_distance_m ?? "N/A"} m`;
+    return `Avstånd: ${distance ?? "N/A"} m`;
 }
 
 function getGeofenceSummary(rows) {
@@ -496,7 +521,7 @@ export default function GeofenceDashboard() {
             setWorkAreasError("");
 
             const response = await axios.get(
-                `/api/device/get/location_areas/${userId}`,
+                `/api/device/area-location/get/${userId}`,
             );
 
             const result = response.data;
@@ -554,7 +579,7 @@ export default function GeofenceDashboard() {
             setError("");
 
             const response = await axios.get(
-                `/api/device/get/gnss/arealocation/${userId}`,
+                `/api/device/gnss/get/arealocation/${userId}`,
             );
 
             const result = response.data;
@@ -637,7 +662,10 @@ export default function GeofenceDashboard() {
             setExplanationLoadingByAlertId({});
             setExplanationErrorByAlertId({});
 
-            const response = await axios.get(`/api/zone-alert/${device_ID}`);
+            const response = await axios.get(
+                `/api/device/alert/${device_ID}?status_type=geofence`,
+            );
+
             const result = response.data;
 
             console.log("Alert history response:", result);
@@ -649,7 +677,16 @@ export default function GeofenceDashboard() {
                 return;
             }
 
-            setAlertHistoryRows(Array.isArray(result.data) ? result.data : []);
+            const alerts = normalizeAlertHistoryResponse(result);
+
+            setAlertHistoryRows(
+                [...alerts].sort((a, b) => {
+                    return (
+                        parseTimestamp(b.created_at) -
+                        parseTimestamp(a.created_at)
+                    );
+                }),
+            );
         } catch (err) {
             console.error("Failed to load alert history:", err);
             setAlertHistoryError("Kunde inte hämta alert-historik.");
@@ -677,7 +714,7 @@ export default function GeofenceDashboard() {
                 device_ID: alert.device_ID ?? selectedAlertDeviceId,
                 from_status: alert.from_status,
                 to_status: alert.to_status,
-                device_area_distance_m: alert.device_area_distance_m,
+                device_area_distance_m: getAlertDistanceValue(alert),
                 created_at: alert.created_at,
             };
 
@@ -787,12 +824,47 @@ export default function GeofenceDashboard() {
             setLastLiveUpdate(new Date().toLocaleTimeString());
         }
 
+        function handleNewGeofenceAlert(alert) {
+            console.log("Live geofence alert on geofence page:", alert);
+
+            if (
+                alertHistoryOpen &&
+                selectedAlertDeviceId &&
+                String(alert.device_ID) === String(selectedAlertDeviceId)
+            ) {
+                setAlertHistoryRows((prev) => {
+                    const normalizedAlert = {
+                        ...alert,
+                        status_type: "geofence",
+                        status_value:
+                            alert.status_value ??
+                            alert.device_area_distance_m ??
+                            null,
+                        created_at:
+                            alert.created_at ??
+                            alert.data_timestamp ??
+                            new Date().toISOString(),
+                    };
+
+                    const exists = prev.some(
+                        (item) =>
+                            getAlertKey(item) === getAlertKey(normalizedAlert),
+                    );
+
+                    if (exists) return prev;
+
+                    return [normalizedAlert, ...prev];
+                });
+            }
+        }
+
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
         socket.on("socket:joined", handleJoined);
         socket.on("gnss:new-position", handleNewGnssPosition);
         socket.on("geofence:new-position", handleNewGeofencePosition);
+        socket.on("geofence:alert", handleNewGeofenceAlert);
 
         if (!socket.connected) {
             socket.connect();
@@ -807,8 +879,9 @@ export default function GeofenceDashboard() {
             socket.off("socket:joined", handleJoined);
             socket.off("gnss:new-position", handleNewGnssPosition);
             socket.off("geofence:new-position", handleNewGeofencePosition);
+            socket.off("geofence:alert", handleNewGeofenceAlert);
         };
-    }, [userId]);
+    }, [userId, alertHistoryOpen, selectedAlertDeviceId]);
 
     return (
         <section className="mx-auto max-w-[1700px] px-4 py-6 md:px-6 md:py-8">
@@ -994,7 +1067,9 @@ export default function GeofenceDashboard() {
 
                                                         <p className="mt-2 text-xs opacity-80">
                                                             Tid:{" "}
-                                                            {row.data_timestamp}
+                                                            {formatTimestamp(
+                                                                row.data_timestamp,
+                                                            )}
                                                         </p>
 
                                                         <button
@@ -1327,7 +1402,9 @@ export default function GeofenceDashboard() {
 
                                                     <p>
                                                         Tid:{" "}
-                                                        {row.data_timestamp}
+                                                        {formatTimestamp(
+                                                            row.data_timestamp,
+                                                        )}
                                                     </p>
                                                 </div>
                                             </Popup>
@@ -1579,7 +1656,7 @@ export default function GeofenceDashboard() {
                                 </p>
 
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Device {selectedAlertDeviceId}
+                                    Device {selectedAlertDeviceId} · geofence
                                 </p>
                             </div>
 
@@ -1604,7 +1681,8 @@ export default function GeofenceDashboard() {
                                 </div>
                             ) : alertHistoryRows.length === 0 ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Inga alerts hittades för denna device.
+                                    Inga geofence-alerts hittades för denna
+                                    device.
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -1640,11 +1718,19 @@ export default function GeofenceDashboard() {
                                                     </div>
 
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="font-bold">
-                                                            {getAlertHistoryTitle(
-                                                                alert,
-                                                            )}
-                                                        </p>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <p className="font-bold">
+                                                                {getAlertHistoryTitle(
+                                                                    alert,
+                                                                )}
+                                                            </p>
+
+                                                            <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide dark:bg-slate-950/40">
+                                                                {
+                                                                    alert.status_type
+                                                                }
+                                                            </span>
+                                                        </div>
 
                                                         <p className="mt-1">
                                                             Från{" "}
@@ -1668,9 +1754,22 @@ export default function GeofenceDashboard() {
                                                             )}
                                                         </p>
 
+                                                        {alert.reason && (
+                                                            <p className="mt-1 text-xs opacity-80">
+                                                                Orsak:{" "}
+                                                                <span className="font-semibold">
+                                                                    {
+                                                                        alert.reason
+                                                                    }
+                                                                </span>
+                                                            </p>
+                                                        )}
+
                                                         <p className="mt-2 text-xs opacity-70">
                                                             Tid:{" "}
-                                                            {alert.created_at}
+                                                            {formatTimestamp(
+                                                                alert.created_at,
+                                                            )}
                                                         </p>
 
                                                         <button
