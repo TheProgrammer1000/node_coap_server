@@ -6,6 +6,8 @@ import {
     Bluetooth,
     CalendarClock,
     Database,
+    Maximize2,
+    Minimize2,
     Pause,
     Play,
     Radio,
@@ -265,7 +267,8 @@ export default function MotionLive() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
 
-    const [playbackSpeedMs, setPlaybackSpeedMs] = useState(90);
+    const [playbackSpeedMs, setPlaybackSpeedMs] = useState(180);
+    const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
 
     const selectedBleDevice = useMemo(() => {
         return bleDevices.find(
@@ -327,7 +330,7 @@ export default function MotionLive() {
     const plateStyle = useMemo(() => {
         return {
             transform: `
-                perspective(1000px)
+                perspective(1100px)
                 rotateZ(${yaw}deg)
                 rotateX(${-pitch}deg)
                 rotateY(${roll}deg)
@@ -448,6 +451,7 @@ export default function MotionLive() {
 
         setCurrentIndex(0);
         setIsPlaying(false);
+        setIsPlayerFullscreen(false);
     }, [selectedBleDeviceId, sessions]);
 
     useEffect(() => {
@@ -481,17 +485,39 @@ export default function MotionLive() {
         };
     }, [isPlaying, selectedSession, playbackSpeedMs]);
 
+    useEffect(() => {
+        if (!isPlayerFullscreen) return;
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        function handleKeyDown(event) {
+            if (event.key === "Escape") {
+                setIsPlayerFullscreen(false);
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [isPlayerFullscreen]);
+
     function handleSelectBleDevice(deviceId) {
         setSelectedBleDeviceId(String(deviceId));
         setSelectedSessionId(null);
         setCurrentIndex(0);
         setIsPlaying(false);
+        setIsPlayerFullscreen(false);
     }
 
     function handleSelectSession(sessionId) {
         setSelectedSessionId(sessionId);
         setCurrentIndex(0);
         setIsPlaying(false);
+        setIsPlayerFullscreen(false);
     }
 
     function handleTogglePlayback() {
@@ -524,17 +550,16 @@ export default function MotionLive() {
     }
 
     return (
-        <section className="mx-auto max-w-[1800px] px-4 py-5 sm:px-5 md:px-6 md:py-8">
-            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
+        <section className="mx-auto w-full max-w-[1800px] overflow-x-hidden px-4 py-5 sm:px-5 md:px-6 md:py-8">
+            <div className="mb-5 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0">
                     <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
                         Motion Sessions
                     </h1>
 
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:text-base">
                         Välj BLE-device och spela upp sparade motion sessions
-                        från databasen. Om en device saknar data visas det
-                        tydligt här.
+                        från databasen.
                     </p>
                 </div>
 
@@ -554,29 +579,29 @@ export default function MotionLive() {
                 </Button>
             </div>
 
-            <div className="mb-5 grid gap-3 md:grid-cols-3">
+            <div className="mb-5 hidden gap-3 lg:grid lg:grid-cols-3">
                 <InfoStep
                     number="1"
                     title="Välj BLE-device"
-                    text="Har användaren flera BLE-devices väljer du vilken device som ska analyseras."
+                    text="Välj vilken BLE-device som ska analyseras."
                 />
 
                 <InfoStep
                     number="2"
                     title="Kontrollera sessions"
-                    text="Sidan visar om vald device har sparad motion data eller inte."
+                    text="Se om vald device har sparad motion data."
                 />
 
                 <InfoStep
                     number="3"
                     title="Spela upp rörelsen"
-                    text="Finns data spelas quaternion-samples upp som 3D-rörelse i webben."
+                    text="Quaternion-samples visas som 3D-rörelse."
                 />
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-                <div className="space-y-4">
-                    <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="grid min-w-0 gap-5 xl:grid-cols-[400px_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)]">
+                <div className="min-w-0 space-y-4">
+                    <Card className="min-w-0 border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <CardHeader className="p-4 sm:p-6">
                             <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                                 <Bluetooth className="h-5 w-5 text-violet-600 dark:text-violet-400" />
@@ -601,7 +626,7 @@ export default function MotionLive() {
                                 <EmptyState
                                     icon={Bluetooth}
                                     title="Inga BLE-devices hittades"
-                                    text="Lägg till en BLE-device först. När den finns kopplad till användaren visas den här."
+                                    text="Lägg till en BLE-device först."
                                 />
                             ) : (
                                 <div className="space-y-3">
@@ -612,7 +637,7 @@ export default function MotionLive() {
                                                 e.target.value,
                                             )
                                         }
-                                        className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                        className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                     >
                                         {bleDevices.map((device) => (
                                             <option
@@ -633,7 +658,7 @@ export default function MotionLive() {
                                                     : "border-violet-200 bg-violet-50 dark:border-violet-900/70 dark:bg-violet-950/30"
                                             }`}
                                         >
-                                            <div className="flex items-start gap-3">
+                                            <div className="flex min-w-0 items-start gap-3">
                                                 <div
                                                     className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                                                         selectedDeviceHasNoData
@@ -650,7 +675,7 @@ export default function MotionLive() {
 
                                                 <div className="min-w-0">
                                                     <p
-                                                        className={`font-black ${
+                                                        className={`truncate font-black ${
                                                             selectedDeviceHasNoData
                                                                 ? "text-amber-900 dark:text-amber-200"
                                                                 : "text-violet-900 dark:text-violet-200"
@@ -683,8 +708,8 @@ export default function MotionLive() {
                                                         }`}
                                                     >
                                                         {selectedDeviceHasNoData
-                                                            ? "Den här devicen är registrerad, men har inga sparade motion sessions ännu."
-                                                            : `${sessions.length} sparade session${sessions.length === 1 ? "" : "er"} hittades för denna device.`}
+                                                            ? "Registrerad, men saknar sparade motion sessions."
+                                                            : `${sessions.length} sparade session${sessions.length === 1 ? "" : "er"} hittades.`}
                                                     </p>
                                                 </div>
                                             </div>
@@ -695,7 +720,7 @@ export default function MotionLive() {
                         </CardContent>
                     </Card>
 
-                    <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <Card className="min-w-0 border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <CardHeader className="p-4 sm:p-6">
                             <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                                 <Radio className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -720,13 +745,13 @@ export default function MotionLive() {
                                 <EmptyState
                                     icon={Bluetooth}
                                     title="Välj en BLE-device"
-                                    text="När du valt device visas dess sparade motion sessions här."
+                                    text="När du valt device visas dess sessions här."
                                 />
                             ) : sessions.length === 0 ? (
                                 <EmptyState
                                     icon={AlertCircle}
-                                    title="Ingen motion data för vald device"
-                                    text="Den här BLE-devicen har inga sparade sessions ännu. Starta en session i React Native-appen och skicka data till backend."
+                                    title="Ingen motion data"
+                                    text="Den här BLE-devicen har inga sparade sessions ännu."
                                     tone="warning"
                                 />
                             ) : (
@@ -807,11 +832,11 @@ export default function MotionLive() {
                     </Card>
                 </div>
 
-                <div className="space-y-5">
-                    <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="min-w-0 space-y-5">
+                    <Card className="min-w-0 border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <CardHeader className="p-4 sm:p-6">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
+                                <div className="min-w-0">
                                     <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                                         <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                         3D Playback
@@ -823,8 +848,23 @@ export default function MotionLive() {
                                 </div>
 
                                 {selectedSession && (
-                                    <div className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 dark:bg-slate-950 dark:text-slate-300">
-                                        Session #{selectedSession.session_ID}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                                            Session #
+                                            {selectedSession.session_ID}
+                                        </div>
+
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() =>
+                                                setIsPlayerFullscreen(true)
+                                            }
+                                            className="h-9 rounded-xl"
+                                        >
+                                            <Maximize2 className="mr-2 h-4 w-4" />
+                                            Fullscreen
+                                        </Button>
                                     </div>
                                 )}
                             </div>
@@ -839,181 +879,35 @@ export default function MotionLive() {
                                     }
                                 />
                             ) : (
-                                <>
-                                    <div className="grid gap-4 lg:grid-cols-[1.45fr_0.55fr]">
-                                        <div className="relative flex h-[320px] items-center justify-center overflow-hidden rounded-2xl bg-slate-950 sm:h-[390px] lg:h-[460px]">
-                                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.08),transparent_46%)]" />
-
-                                            <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(148,163,184,0.14)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.14)_1px,transparent_1px)] [background-size:36px_36px]" />
-
-                                            <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-slate-800/90 px-3 py-1 text-xs font-bold text-slate-200 sm:left-4 sm:top-4">
-                                                <span
-                                                    className={`h-2 w-2 rounded-full ${
-                                                        isPlaying
-                                                            ? "bg-green-500"
-                                                            : "bg-slate-500"
-                                                    }`}
-                                                />
-                                                {isPlaying
-                                                    ? "PLAYBACK"
-                                                    : "PAUSED"}
-                                            </div>
-
-                                            <div className="absolute right-3 top-3 rounded-full bg-slate-800/90 px-3 py-1 text-xs font-bold text-slate-200 sm:right-4 sm:top-4">
-                                                Sample {currentSampleNumber} /{" "}
-                                                {totalSamples}
-                                            </div>
-
-                                            <div className="absolute bottom-3 left-3 rounded-xl bg-slate-900/85 px-3 py-2 text-xs text-slate-300 sm:bottom-4 sm:left-4">
-                                                <div>X → Roll</div>
-                                                <div>Y → Pitch</div>
-                                                <div>Z → Yaw</div>
-                                            </div>
-
-                                            <div className="absolute bottom-12 left-1/2 h-10 w-44 -translate-x-1/2 rounded-full bg-blue-500/5 blur-xl sm:w-60" />
-
-                                            <div
-                                                className="relative flex h-28 w-48 items-center justify-center rounded-3xl border-4 border-green-200 bg-gradient-to-br from-green-400 to-emerald-600 shadow-[0_18px_60px_rgba(34,197,94,0.25)] transition-transform ease-linear will-change-transform sm:h-36 sm:w-64"
-                                                style={plateStyle}
-                                            >
-                                                <div className="absolute top-3 h-2 w-20 rounded-full bg-green-950/35 sm:top-4 sm:w-24" />
-
-                                                <div className="text-center">
-                                                    <p className="text-xl font-black text-green-950 sm:text-2xl">
-                                                        BNO055
-                                                    </p>
-                                                    <p className="text-[10px] font-bold text-green-900 sm:text-xs">
-                                                        session playback
-                                                    </p>
-                                                </div>
-
-                                                <div className="absolute bottom-2 left-3 text-[10px] font-black text-green-950 sm:bottom-3 sm:left-4 sm:text-xs">
-                                                    X →
-                                                </div>
-
-                                                <div className="absolute bottom-2 right-3 text-[10px] font-black text-green-950 sm:bottom-3 sm:right-4 sm:text-xs">
-                                                    Z ↑
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 lg:content-start">
-                                            <ValueBox
-                                                label="Sample"
-                                                value={`${currentSampleNumber} / ${totalSamples}`}
-                                            />
-
-                                            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950">
-                                                <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                                                    <CalendarClock className="h-4 w-4" />
-                                                    Sample time
-                                                </div>
-
-                                                <p className="break-words font-mono text-sm font-black text-slate-950 dark:text-white">
-                                                    {formatDateTime(
-                                                        currentSample.created_at,
-                                                    )}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-5 space-y-3">
-                                        <div className="h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                                            <div
-                                                className="h-full rounded-full bg-blue-600 ease-linear will-change-[width]"
-                                                style={{
-                                                    width: `${progressPercent}%`,
-                                                    transitionProperty: "width",
-                                                    transitionDuration: `${progressTransitionMs}ms`,
-                                                }}
-                                            />
-                                        </div>
-
-                                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                                                <Button
-                                                    type="button"
-                                                    onClick={
-                                                        handleTogglePlayback
-                                                    }
-                                                    className="w-full sm:w-auto"
-                                                >
-                                                    {isPlaying ? (
-                                                        <>
-                                                            <Pause className="mr-2 h-4 w-4" />
-                                                            Pausa
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Play className="mr-2 h-4 w-4" />
-                                                            Spela
-                                                        </>
-                                                    )}
-                                                </Button>
-
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    onClick={
-                                                        handleResetPlayback
-                                                    }
-                                                    className="w-full sm:w-auto"
-                                                >
-                                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                                    Starta om
-                                                </Button>
-
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    onClick={handleStepBackward}
-                                                    className="w-full sm:w-auto"
-                                                >
-                                                    -1 sample
-                                                </Button>
-
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    onClick={handleStepForward}
-                                                    className="w-full sm:w-auto"
-                                                >
-                                                    +1 sample
-                                                </Button>
-                                            </div>
-
-                                            <select
-                                                value={playbackSpeedMs}
-                                                onChange={(e) =>
-                                                    setPlaybackSpeedMs(
-                                                        Number(e.target.value),
-                                                    )
-                                                }
-                                                className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-44"
-                                            >
-                                                <option value={300}>
-                                                    Långsam
-                                                </option>
-                                                <option value={180}>
-                                                    Normal
-                                                </option>
-                                                <option value={90}>
-                                                    Snabb
-                                                </option>
-                                                <option value={40}>
-                                                    Väldigt snabb
-                                                </option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </>
+                                <PlaybackContent
+                                    isFullscreen={isPlayerFullscreen}
+                                    onCloseFullscreen={() =>
+                                        setIsPlayerFullscreen(false)
+                                    }
+                                    isPlaying={isPlaying}
+                                    currentSampleNumber={currentSampleNumber}
+                                    totalSamples={totalSamples}
+                                    plateStyle={plateStyle}
+                                    progressPercent={progressPercent}
+                                    progressTransitionMs={progressTransitionMs}
+                                    handleTogglePlayback={handleTogglePlayback}
+                                    handleResetPlayback={handleResetPlayback}
+                                    handleStepBackward={handleStepBackward}
+                                    handleStepForward={handleStepForward}
+                                    playbackSpeedMs={playbackSpeedMs}
+                                    setPlaybackSpeedMs={setPlaybackSpeedMs}
+                                    currentSample={currentSample}
+                                    roll={roll}
+                                    pitch={pitch}
+                                    yaw={yaw}
+                                    selectedSession={selectedSession}
+                                />
                             )}
                         </CardContent>
                     </Card>
 
                     {selectedSession && (
-                        <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <Card className="min-w-0 border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                             <CardHeader className="p-4 sm:p-6">
                                 <CardTitle className="text-lg">
                                     Samples i vald session
@@ -1021,100 +915,402 @@ export default function MotionLive() {
                             </CardHeader>
 
                             <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
-                                <div className="max-h-[360px] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-                                    <table className="w-full min-w-[640px] text-left text-sm">
-                                        <thead className="sticky top-0 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-                                            <tr>
-                                                <th className="px-4 py-3">
-                                                    Sample
-                                                </th>
-                                                <th className="px-4 py-3">
-                                                    QW
-                                                </th>
-                                                <th className="px-4 py-3">
-                                                    QX
-                                                </th>
-                                                <th className="px-4 py-3">
-                                                    QY
-                                                </th>
-                                                <th className="px-4 py-3">
-                                                    QZ
-                                                </th>
-                                                <th className="px-4 py-3">
-                                                    Time
-                                                </th>
-                                            </tr>
-                                        </thead>
-
-                                        <tbody>
-                                            {selectedSession.samples.map(
-                                                (row, index) => {
-                                                    const active =
-                                                        index === currentIndex;
-
-                                                    return (
-                                                        <tr
-                                                            key={`${row.session_ID}-${row.__row_index}-${index}`}
-                                                            onClick={() => {
-                                                                setIsPlaying(
-                                                                    false,
-                                                                );
-                                                                setCurrentIndex(
-                                                                    index,
-                                                                );
-                                                            }}
-                                                            className={`cursor-pointer border-t border-slate-200 font-mono text-xs dark:border-slate-800 ${
-                                                                active
-                                                                    ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
-                                                                    : "hover:bg-slate-50 dark:hover:bg-slate-950"
-                                                            }`}
-                                                        >
-                                                            <td className="px-4 py-3 font-bold">
-                                                                {index + 1}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                {row.quat_w.toFixed(
-                                                                    2,
-                                                                )}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                {row.quat_x.toFixed(
-                                                                    2,
-                                                                )}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                {row.quat_y.toFixed(
-                                                                    2,
-                                                                )}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                {row.quat_z.toFixed(
-                                                                    2,
-                                                                )}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                {formatTime(
-                                                                    row.created_at,
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                },
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <SampleList
+                                    samples={selectedSession.samples}
+                                    currentIndex={currentIndex}
+                                    setCurrentIndex={setCurrentIndex}
+                                    setIsPlaying={setIsPlaying}
+                                />
                             </CardContent>
                         </Card>
                     )}
                 </div>
             </div>
         </section>
+    );
+}
+
+function PlaybackContent({
+    isFullscreen,
+    onCloseFullscreen,
+    isPlaying,
+    currentSampleNumber,
+    totalSamples,
+    plateStyle,
+    progressPercent,
+    progressTransitionMs,
+    handleTogglePlayback,
+    handleResetPlayback,
+    handleStepBackward,
+    handleStepForward,
+    playbackSpeedMs,
+    setPlaybackSpeedMs,
+    currentSample,
+    roll,
+    pitch,
+    yaw,
+    selectedSession,
+}) {
+    const content = (
+        <div className="min-w-0">
+            {isFullscreen && (
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="text-xl font-black text-white">
+                            3D Playback
+                        </p>
+
+                        <p className="mt-1 text-sm text-slate-400">
+                            Session #{selectedSession.session_ID} · Sample{" "}
+                            {currentSampleNumber} / {totalSamples}
+                        </p>
+                    </div>
+
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onCloseFullscreen}
+                        className="h-10 w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 sm:w-fit"
+                    >
+                        <Minimize2 className="mr-2 h-4 w-4" />
+                        Återgå
+                    </Button>
+                </div>
+            )}
+
+            <div
+                className={`relative flex w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-950 ${
+                    isFullscreen
+                        ? "h-[58dvh] min-h-[360px] sm:h-[66dvh] lg:h-[70dvh]"
+                        : "h-[330px] sm:h-[430px] lg:h-[560px] 2xl:h-[650px]"
+                }`}
+            >
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.08),transparent_46%)]" />
+
+                <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(148,163,184,0.14)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.14)_1px,transparent_1px)] [background-size:32px_32px] sm:[background-size:40px_40px]" />
+
+                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-slate-800/90 px-3 py-1 text-xs font-bold text-slate-200 sm:left-4 sm:top-4">
+                    <span
+                        className={`h-2 w-2 rounded-full ${
+                            isPlaying ? "bg-green-500" : "bg-slate-500"
+                        }`}
+                    />
+                    {isPlaying ? "PLAYBACK" : "PAUSED"}
+                </div>
+
+                <div className="absolute right-3 top-3 rounded-full bg-slate-800/90 px-3 py-1 text-xs font-bold text-slate-200 sm:right-4 sm:top-4">
+                    Sample {currentSampleNumber} / {totalSamples}
+                </div>
+
+                <div className="absolute bottom-3 left-3 rounded-xl bg-slate-900/85 px-3 py-2 text-xs text-slate-300 sm:bottom-4 sm:left-4">
+                    <div>X → Roll</div>
+                    <div>Y → Pitch</div>
+                    <div>Z → Yaw</div>
+                </div>
+
+                <div className="absolute bottom-12 left-1/2 h-10 w-44 -translate-x-1/2 rounded-full bg-blue-500/5 blur-xl sm:w-72" />
+
+                <div
+                    className={`relative flex items-center justify-center rounded-3xl border-4 border-green-200 bg-gradient-to-br from-green-400 to-emerald-600 shadow-[0_18px_70px_rgba(34,197,94,0.28)] transition-transform ease-linear will-change-transform ${
+                        isFullscreen
+                            ? "h-36 w-60 sm:h-44 sm:w-80 lg:h-56 lg:w-96"
+                            : "h-28 w-48 sm:h-40 sm:w-72 lg:h-48 lg:w-80 2xl:h-56 2xl:w-96"
+                    }`}
+                    style={plateStyle}
+                >
+                    <div className="absolute top-3 h-2 w-20 rounded-full bg-green-950/35 sm:top-5 sm:w-28" />
+
+                    <div className="text-center">
+                        <p className="text-xl font-black text-green-950 sm:text-3xl">
+                            BNO055
+                        </p>
+                        <p className="text-[10px] font-bold text-green-900 sm:text-sm">
+                            session playback
+                        </p>
+                    </div>
+
+                    <div className="absolute bottom-2 left-3 text-[10px] font-black text-green-950 sm:bottom-4 sm:left-5 sm:text-xs">
+                        X →
+                    </div>
+
+                    <div className="absolute bottom-2 right-3 text-[10px] font-black text-green-950 sm:bottom-4 sm:right-5 sm:text-xs">
+                        Z ↑
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-5 space-y-4">
+                <div className="h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                    <div
+                        className="h-full rounded-full bg-blue-600 ease-linear will-change-[width]"
+                        style={{
+                            width: `${progressPercent}%`,
+                            transitionProperty: "width",
+                            transitionDuration: `${progressTransitionMs}ms`,
+                        }}
+                    />
+                </div>
+
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        <Button
+                            type="button"
+                            onClick={handleTogglePlayback}
+                            className="w-full sm:w-auto"
+                        >
+                            {isPlaying ? (
+                                <>
+                                    <Pause className="mr-2 h-4 w-4" />
+                                    Pausa
+                                </>
+                            ) : (
+                                <>
+                                    <Play className="mr-2 h-4 w-4" />
+                                    Spela
+                                </>
+                            )}
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleResetPlayback}
+                            className="w-full sm:w-auto"
+                        >
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            Starta om
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleStepBackward}
+                            className="w-full sm:w-auto"
+                        >
+                            -1 sample
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleStepForward}
+                            className="w-full sm:w-auto"
+                        >
+                            +1 sample
+                        </Button>
+                    </div>
+
+                    <select
+                        value={playbackSpeedMs}
+                        onChange={(e) =>
+                            setPlaybackSpeedMs(Number(e.target.value))
+                        }
+                        className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-44"
+                    >
+                        <option value={300}>Långsam</option>
+                        <option value={180}>Normal</option>
+                        <option value={90}>Snabb</option>
+                        <option value={40}>Väldigt snabb</option>
+                    </select>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <ValueBox
+                        label="Sample"
+                        value={`${currentSampleNumber} / ${totalSamples}`}
+                    />
+
+                    <ValueBox
+                        label="Sample time"
+                        value={formatDateTime(currentSample.created_at)}
+                        icon={CalendarClock}
+                    />
+
+                    <ValueBox
+                        label="Roll / Pitch"
+                        value={`${roll.toFixed(1)}° / ${pitch.toFixed(1)}°`}
+                    />
+
+                    <ValueBox label="Yaw" value={`${yaw.toFixed(1)}°`} />
+                </div>
+            </div>
+        </div>
+    );
+
+    if (isFullscreen) {
+        return (
+            <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950 p-3 text-white sm:p-6">
+                <div className="mx-auto max-w-[1600px]">{content}</div>
+            </div>
+        );
+    }
+
+    return content;
+}
+
+function SampleList({ samples, currentIndex, setCurrentIndex, setIsPlaying }) {
+    function handleSelectSample(index) {
+        setIsPlaying(false);
+        setCurrentIndex(index);
+    }
+
+    return (
+        <>
+            <div className="md:hidden">
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+                    <div>
+                        <p className="text-sm font-black text-slate-950 dark:text-white">
+                            {samples.length} samples
+                        </p>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Tryck på ett sample för att visa det i spelaren.
+                        </p>
+                    </div>
+
+                    <span className="shrink-0 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
+                        Aktiv {currentIndex + 1}
+                    </span>
+                </div>
+
+                <div className="max-h-[560px] overflow-y-auto overscroll-contain rounded-3xl border border-slate-200 bg-slate-950/20 p-2 pr-1 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="space-y-2 pr-1">
+                        {samples.map((row, index) => {
+                            const active = index === currentIndex;
+
+                            return (
+                                <button
+                                    key={`mobile-${row.session_ID}-${row.__row_index}-${index}`}
+                                    type="button"
+                                    onClick={() => handleSelectSample(index)}
+                                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                                        active
+                                            ? "border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/20"
+                                            : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
+                                    }`}
+                                >
+                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                        <p className="font-black text-slate-950 dark:text-white">
+                                            Sample {index + 1}
+                                        </p>
+
+                                        <span
+                                            className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                                                active
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                            }`}
+                                        >
+                                            {active
+                                                ? "ACTIVE"
+                                                : formatTime(row.created_at)}
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <SampleMiniValue
+                                            label="QW"
+                                            value={row.quat_w.toFixed(2)}
+                                        />
+                                        <SampleMiniValue
+                                            label="QX"
+                                            value={row.quat_x.toFixed(2)}
+                                        />
+                                        <SampleMiniValue
+                                            label="QY"
+                                            value={row.quat_y.toFixed(2)}
+                                        />
+                                        <SampleMiniValue
+                                            label="QZ"
+                                            value={row.quat_z.toFixed(2)}
+                                        />
+                                    </div>
+
+                                    <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                                        Tid: {formatDateTime(row.created_at)}
+                                    </p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="hidden md:block">
+                <div className="max-h-[360px] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <table className="w-full min-w-[620px] text-left text-sm">
+                        <thead className="sticky top-0 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+                            <tr>
+                                <th className="px-4 py-3">Sample</th>
+                                <th className="px-4 py-3">QW</th>
+                                <th className="px-4 py-3">QX</th>
+                                <th className="px-4 py-3">QY</th>
+                                <th className="px-4 py-3">QZ</th>
+                                <th className="px-4 py-3">Time</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {samples.map((row, index) => {
+                                const active = index === currentIndex;
+
+                                return (
+                                    <tr
+                                        key={`${row.session_ID}-${row.__row_index}-${index}`}
+                                        onClick={() =>
+                                            handleSelectSample(index)
+                                        }
+                                        className={`cursor-pointer border-t border-slate-200 font-mono text-xs dark:border-slate-800 ${
+                                            active
+                                                ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                                                : "hover:bg-slate-50 dark:hover:bg-slate-950"
+                                        }`}
+                                    >
+                                        <td className="px-4 py-3 font-bold">
+                                            {index + 1}
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                            {row.quat_w.toFixed(2)}
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                            {row.quat_x.toFixed(2)}
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                            {row.quat_y.toFixed(2)}
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                            {row.quat_z.toFixed(2)}
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                            {formatTime(row.created_at)}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </>
+    );
+}
+
+function SampleMiniValue({ label, value }) {
+    return (
+        <div className="rounded-xl bg-white p-3 dark:bg-slate-900">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {label}
+            </p>
+
+            <p className="mt-1 font-mono text-sm font-black text-slate-950 dark:text-white">
+                {value}
+            </p>
+        </div>
     );
 }
 
@@ -1201,21 +1397,8 @@ function PlaybackEmptyState({ selectedBleDevice, selectedDeviceHasNoData }) {
                     <p className="mt-2 text-sm leading-6">
                         Devicen är kopplad till användaren, men det finns inga
                         sparade motion sessions ännu. Starta en session i React
-                        Native-appen, låt BNO055 skicka quaternion-data och
-                        avsluta sessionen. Då visas den här för playback.
+                        Native-appen och ladda om sidan.
                     </p>
-
-                    <div className="mt-4 rounded-2xl bg-white/70 p-4 text-left text-sm dark:bg-slate-950/40">
-                        <p className="font-bold">Förväntat flöde:</p>
-                        <ol className="mt-2 list-decimal space-y-1 pl-5">
-                            <li>Välj BLE-device i React Native-appen.</li>
-                            <li>Starta motion session.</li>
-                            <li>
-                                Skicka BNO055 quaternion-samples till backend.
-                            </li>
-                            <li>Avsluta sessionen och ladda om denna sida.</li>
-                        </ol>
-                    </div>
                 </div>
             </div>
         );
@@ -1239,14 +1422,15 @@ function PlaybackEmptyState({ selectedBleDevice, selectedDeviceHasNoData }) {
     );
 }
 
-function ValueBox({ label, value }) {
+function ValueBox({ label, value, icon: Icon }) {
     return (
-        <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950">
-            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+        <div className="min-w-0 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                {Icon && <Icon className="h-4 w-4" />}
                 {label}
-            </p>
+            </div>
 
-            <p className="mt-1 break-words font-mono text-lg font-black text-slate-950 dark:text-white">
+            <p className="mt-1 break-words font-mono text-sm font-black text-slate-950 dark:text-white sm:text-base">
                 {value}
             </p>
         </div>
