@@ -744,17 +744,17 @@ export default function Dashboard() {
         );
     }, [sortedDevices]);
 
-    useEffect(() => {
-        if (!userId) return;
+    // useEffect(() => {
+    //     if (!userId) return;
 
-        const interval = window.setInterval(() => {
-            loadDashboardData();
-        }, 20000);
+    //     const interval = window.setInterval(() => {
+    //         loadDashboardData();
+    //     }, 20000);
 
-        return () => {
-            window.clearInterval(interval);
-        };
-    }, [userId]);
+    //     return () => {
+    //         window.clearInterval(interval);
+    //     };
+    // }, [userId]);
 
     const positionedDevices = useMemo(() => {
         return sortedDevices.filter((device) => hasValidPosition(device));
