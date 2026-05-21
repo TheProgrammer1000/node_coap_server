@@ -377,14 +377,32 @@ export default function MockCellular() {
         });
     }, [selectedLocation, routeType, pointCount, radiusMeters, routeSeed]);
 
-    const currentLivePoint = previewRoute[liveIndex] || previewRoute[0] || null;
+    const hasSentPositions = sentPositions.length > 0;
+
+    /*
+        previewRoute = planerad rutt innan mocken skickas.
+        sentPositions = den faktiska skickade rutten.
+
+        Det viktiga här är att kartan ska följa sentPositions efter att mocken
+        har skickats. Annars kan en ny random previewRoute göra att linjen och
+        device-markern hamnar på olika platser.
+    */
+    const visibleRoute = hasSentPositions ? sentPositions : previewRoute;
+
+    const currentLivePoint = hasSentPositions
+        ? sentPositions[Math.min(liveIndex, sentPositions.length - 1)] ||
+          sentPositions[sentPositions.length - 1]
+        : previewRoute[0] || null;
 
     const routeCenter = getRouteCenter(
-        previewRoute,
+        visibleRoute,
         selectedLocation || DEFAULT_CENTER,
     );
 
-    const routeLine = previewRoute.map((point) => [point.lat, point.lon]);
+    const previewLine = !hasSentPositions
+        ? previewRoute.map((point) => [point.lat, point.lon])
+        : [];
+
     const sentLine = sentPositions.map((point) => [point.lat, point.lon]);
 
     const progressText = `${sentPositions.length}/${previewRoute.length}`;
@@ -569,7 +587,7 @@ export default function MockCellular() {
                 }.`,
             );
 
-            setRouteSeed(Date.now() + Math.random());
+            // Behåll samma rutt efter skickning så karta och device-marker stämmer.
         } catch (error) {
             console.error("Failed to send mock cellular route:", error);
 
@@ -886,8 +904,8 @@ export default function MockCellular() {
                                 </h2>
 
                                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                    Planerad rutt, skickade positioner och vald
-                                    radie.
+                                    Blå streckad linje är planerad rutt. Grön
+                                    linje visas efter skickad mock.
                                 </p>
                             </div>
 
@@ -921,7 +939,7 @@ export default function MockCellular() {
                                 />
 
                                 <MapAutoFit
-                                    points={previewRoute}
+                                    points={visibleRoute}
                                     selectedLocation={selectedLocation}
                                 />
 
@@ -954,13 +972,13 @@ export default function MockCellular() {
                                     </Circle>
                                 )}
 
-                                {routeLine.length > 1 && (
+                                {previewLine.length > 1 && (
                                     <Polyline
-                                        positions={routeLine}
+                                        positions={previewLine}
                                         pathOptions={{
                                             color: "#2563eb",
                                             weight: 4,
-                                            opacity: 0.65,
+                                            opacity: 0.7,
                                             dashArray: "8 8",
                                         }}
                                     />
@@ -970,18 +988,27 @@ export default function MockCellular() {
                                     <Polyline
                                         positions={sentLine}
                                         pathOptions={{
-                                            color: "#16a34a",
-                                            weight: 5,
-                                            opacity: 0.9,
+                                            color: "#10b981",
+                                            weight: 4,
+                                            opacity: 0.85,
                                         }}
                                     />
                                 )}
 
-                                {previewRoute.map((point, index) => {
+                                {visibleRoute.map((point, index) => {
                                     const isFirst = index === 0;
                                     const isLast =
-                                        index === previewRoute.length - 1;
-                                    const isSent = index <= liveIndex;
+                                        index === visibleRoute.length - 1;
+                                    const isSent =
+                                        hasSentPositions &&
+                                        index < sentPositions.length;
+                                    const isCurrent =
+                                        hasSentPositions &&
+                                        index ===
+                                            Math.min(
+                                                liveIndex,
+                                                sentPositions.length - 1,
+                                            );
 
                                     return (
                                         <CircleMarker
@@ -989,16 +1016,22 @@ export default function MockCellular() {
                                             center={[point.lat, point.lon]}
                                             radius={isFirst || isLast ? 7 : 5}
                                             pathOptions={{
-                                                color: isSent
-                                                    ? "#16a34a"
-                                                    : "#2563eb",
-                                                fillColor: isSent
-                                                    ? "#16a34a"
-                                                    : "#2563eb",
-                                                fillOpacity: isSent
-                                                    ? 0.9
-                                                    : 0.35,
-                                                weight: 2,
+                                                color: isCurrent
+                                                    ? "#2563eb"
+                                                    : isSent
+                                                      ? "#64748b"
+                                                      : "#2563eb",
+                                                fillColor: isCurrent
+                                                    ? "#2563eb"
+                                                    : isSent
+                                                      ? "#64748b"
+                                                      : "#2563eb",
+                                                fillOpacity: isCurrent
+                                                    ? 0.95
+                                                    : isSent
+                                                      ? 0.85
+                                                      : 0.35,
+                                                weight: isCurrent ? 4 : 2,
                                             }}
                                         >
                                             <Popup>
@@ -1033,11 +1066,15 @@ export default function MockCellular() {
                                             currentLivePoint.lat,
                                             currentLivePoint.lon,
                                         ]}
-                                        radius={11}
+                                        radius={12}
                                         pathOptions={{
-                                            color: "#f97316",
-                                            fillColor: "#f97316",
-                                            fillOpacity: 0.95,
+                                            color: sending
+                                                ? "#f97316"
+                                                : "#2563eb",
+                                            fillColor: sending
+                                                ? "#f97316"
+                                                : "#2563eb",
+                                            fillOpacity: 0.96,
                                             weight: 4,
                                         }}
                                     >
@@ -1127,9 +1164,17 @@ export default function MockCellular() {
                             </div>
 
                             <div className="mt-4 max-h-[260px] space-y-2 overflow-y-auto pr-1">
-                                {previewRoute.map((point, index) => {
-                                    const isCurrent = index === liveIndex;
-                                    const isSent = index < sentPositions.length;
+                                {visibleRoute.map((point, index) => {
+                                    const isCurrent =
+                                        hasSentPositions &&
+                                        index ===
+                                            Math.min(
+                                                liveIndex,
+                                                sentPositions.length - 1,
+                                            );
+                                    const isSent =
+                                        hasSentPositions &&
+                                        index < sentPositions.length;
 
                                     return (
                                         <div
