@@ -736,10 +736,10 @@ export default function WorkAreas() {
     useEffect(() => {
         if (!userId) return;
 
-        function handleConnect() {
-            socket.emit("join-user-room", userId);
-        }
-
+        /*
+            Socket-anslutning och join-user-room sköts globalt i AppLayout.
+            WorkAreas ska bara lyssna på nya GNSS-positioner.
+        */
         function handleNewGnssPosition(newPoint) {
             console.log("Live GNSS position on work areas:", newPoint);
 
@@ -748,17 +748,9 @@ export default function WorkAreas() {
             );
         }
 
-        socket.on("connect", handleConnect);
         socket.on("gnss:new-position", handleNewGnssPosition);
 
-        if (!socket.connected) {
-            socket.connect();
-        } else {
-            handleConnect();
-        }
-
         return () => {
-            socket.off("connect", handleConnect);
             socket.off("gnss:new-position", handleNewGnssPosition);
         };
     }, [userId]);

@@ -765,13 +765,15 @@ export default function GeofenceDashboard() {
             return;
         }
 
-        setSocketStatus("connecting");
+        /*
+            Socket-anslutning och join-user-room sköts globalt i AppLayout.
+            GeofenceDashboard ska bara lyssna på live-events.
+        */
+        setSocketStatus(socket.connected ? "connected" : "disconnected");
 
         function handleConnect() {
             console.log("Geofence socket connected:", socket.id);
-
             setSocketStatus("connected");
-            socket.emit("join-user-room", userId);
         }
 
         function handleDisconnect() {
@@ -782,10 +784,6 @@ export default function GeofenceDashboard() {
         function handleConnectError(error) {
             console.error("Geofence socket connection error:", error);
             setSocketStatus("disconnected");
-        }
-
-        function handleJoined(payload) {
-            console.log("Joined geofence socket room:", payload);
         }
 
         function handleNewGnssPosition(newPoint) {
@@ -861,22 +859,14 @@ export default function GeofenceDashboard() {
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
-        socket.on("socket:joined", handleJoined);
         socket.on("gnss:new-position", handleNewGnssPosition);
         socket.on("geofence:new-position", handleNewGeofencePosition);
         socket.on("geofence:alert", handleNewGeofenceAlert);
-
-        if (!socket.connected) {
-            socket.connect();
-        } else {
-            handleConnect();
-        }
 
         return () => {
             socket.off("connect", handleConnect);
             socket.off("disconnect", handleDisconnect);
             socket.off("connect_error", handleConnectError);
-            socket.off("socket:joined", handleJoined);
             socket.off("gnss:new-position", handleNewGnssPosition);
             socket.off("geofence:new-position", handleNewGeofencePosition);
             socket.off("geofence:alert", handleNewGeofenceAlert);

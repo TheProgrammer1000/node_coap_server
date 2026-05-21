@@ -1065,37 +1065,30 @@ export default function Dashboard() {
     useEffect(() => {
         if (!userId) {
             setSocketStatus("disconnected");
-
-            if (socket.connected) {
-                socket.disconnect();
-            }
-
             return;
         }
 
-        setSocketStatus("connecting");
+        /*
+            Socket-anslutning och join-user-room sköts globalt i AppLayout.
+            Dashboard ska bara lyssna på live-events och aldrig connecta,
+            joina eller disconnecta socketen. Annars kan andra sidor tappa
+            live-uppdateringar på live-servern.
+        */
+        setSocketStatus(socket.connected ? "connected" : "disconnected");
 
         function handleConnect() {
-            console.log("Socket connected:", socket.id);
-
+            console.log("Dashboard socket connected:", socket.id);
             setSocketStatus("connected");
-            socket.emit("join-user-room", userId);
         }
 
         function handleDisconnect() {
-            console.log("Socket disconnected");
-
+            console.log("Dashboard socket disconnected");
             setSocketStatus("disconnected");
         }
 
         function handleConnectError(error) {
-            console.error("Socket connection error:", error);
-
+            console.error("Dashboard socket connection error:", error);
             setSocketStatus("disconnected");
-        }
-
-        function handleJoined(payload) {
-            console.log("Joined socket room:", payload);
         }
 
         function handleNewPosition(newPoint) {
@@ -1179,28 +1172,15 @@ export default function Dashboard() {
         socket.on("connect", handleConnect);
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
-        socket.on("socket:joined", handleJoined);
         socket.on("gnss:new-position", handleNewPosition);
         socket.on("device:status", handleDeviceStatus);
 
-        if (!socket.connected) {
-            socket.connect();
-        } else {
-            handleConnect();
-        }
-
         return () => {
-            socket.emit("leave-user-room", userId);
-
             socket.off("connect", handleConnect);
             socket.off("disconnect", handleDisconnect);
             socket.off("connect_error", handleConnectError);
-            socket.off("socket:joined", handleJoined);
             socket.off("gnss:new-position", handleNewPosition);
             socket.off("device:status", handleDeviceStatus);
-
-            socket.disconnect();
-            setSocketStatus("disconnected");
         };
     }, [userId]);
 
