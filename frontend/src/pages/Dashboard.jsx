@@ -38,9 +38,22 @@ L.Icon.Default.mergeOptions({
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const ONLINE_THRESHOLD_MS = 4 * 60 * 1000;
 const WEAK_ACCURACY_THRESHOLD = 50;
-const HISTORY_LIMIT = 5;
+
+const DEFAULT_HISTORY_LIMIT = 10;
+const HISTORY_FETCH_LIMIT = 100;
+const HISTORY_LIMIT_OPTIONS = [1, 2, 3, 4, 5, 10, 15, 20, 50];
+
+function getSafeHistoryLimit(limit) {
+    const numberLimit = Number(limit);
+
+    if (HISTORY_LIMIT_OPTIONS.includes(numberLimit)) {
+        return numberLimit;
+    }
+
+    return DEFAULT_HISTORY_LIMIT;
+}
 
 function getPointDeviceId(point) {
     return point?.device_ID ?? point?.device_id ?? null;
@@ -113,24 +126,25 @@ function getAgeMs(timestamp) {
 }
 
 function getDeviceStatus(point) {
-    const explicitStatus = String(
-        point?.connection_status ?? point?.status ?? "",
-    ).toLowerCase();
-
-    if (explicitStatus === "online" || explicitStatus === "offline") {
-        return explicitStatus;
-    }
-
     const lastSeen = getDeviceLastSeen(point);
     const ageMs = getAgeMs(lastSeen);
 
-    if (ageMs === null) {
-        return "unknown";
+    /*
+        Frontend räknar status live från last_seen.
+        Backendens connection_status används bara som fallback om last_seen saknas.
+
+        Detta gör att dashboarden automatiskt går från online till offline
+        efter 4 minuter utan att sidan behöver laddas om eller göra en ny fetch.
+    */
+    if (ageMs !== null) {
+        return ageMs <= ONLINE_THRESHOLD_MS ? "online" : "offline";
     }
 
-    if (ageMs <= ONLINE_THRESHOLD_MS) {
-        return "online";
-    }
+    const fallbackStatus = String(
+        point?.connection_status ?? point?.status ?? "",
+    ).toLowerCase();
+
+    if (fallbackStatus === "online") return "online";
 
     return "offline";
 }
@@ -266,6 +280,18 @@ function formatPositionCount(count) {
     return `${count} sparade positioner`;
 }
 
+function formatVisibleHistoryCount(visibleCount, totalCount) {
+    if (visibleCount === 0) {
+        return "Ingen positionshistorik";
+    }
+
+    if (totalCount > visibleCount) {
+        return `Visar ${visibleCount} av ${totalCount} sparade positioner`;
+    }
+
+    return formatPositionCount(visibleCount);
+}
+
 function formatWaitingForGnssCount(count) {
     if (count === 0) return "Alla cellular devices har GNSS-position.";
     if (count === 1) return "1 cellular device väntar på första GNSS-position.";
@@ -277,9 +303,29 @@ function getHistoryButtonLabel(showHistory, count) {
 
     if (showHistory) return "Dölj historik på kartan";
 
-    if (count === 1) return "Visa 1 position på kartan";
+    if (count === 1) return "Visa 1 senaste position på kartan";
 
-    return `Visa ${count} positioner på kartan`;
+    return `Visa ${count} senaste positioner på kartan`;
+}
+
+function getDeviceHistoryTotalCount(device, historyRows) {
+    const countCandidates = [
+        historyRows?.find((row) => row?.device_position_count !== undefined)
+            ?.device_position_count,
+        device?.device_position_count,
+        device?.position_count,
+        device?.history_count,
+    ];
+
+    for (const value of countCandidates) {
+        const count = Number(value);
+
+        if (Number.isFinite(count) && count >= 0) {
+            return Math.max(Math.floor(count), historyRows?.length ?? 0);
+        }
+    }
+
+    return historyRows?.length ?? 0;
 }
 
 function normalizeGnssResponse(result) {
@@ -402,7 +448,8 @@ function sortByNewest(points) {
     });
 }
 
-function groupHistoryByDevice(rows) {
+function groupHistoryByDevice(rows, limit = DEFAULT_HISTORY_LIMIT) {
+    const safeLimit = getSafeHistoryLimit(limit);
     const grouped = {};
 
     rows.forEach((row) => {
@@ -423,20 +470,22 @@ function groupHistoryByDevice(rows) {
     });
 
     Object.keys(grouped).forEach((deviceId) => {
-        grouped[deviceId] = sortByNewest(grouped[deviceId]).slice(
-            0,
-            HISTORY_LIMIT,
-        );
+        grouped[deviceId] = sortByNewest(grouped[deviceId]).slice(0, safeLimit);
     });
 
     return grouped;
 }
 
-function upsertDeviceHistoryPoint(previousHistory, newPoint) {
+function upsertDeviceHistoryPoint(
+    previousHistory,
+    newPoint,
+    limit = DEFAULT_HISTORY_LIMIT,
+) {
     const deviceId = getPointDeviceId(newPoint);
 
     if (!deviceId) return previousHistory;
 
+    const safeLimit = getSafeHistoryLimit(limit);
     const key = String(deviceId);
     const currentHistory = previousHistory[key] ?? [];
 
@@ -453,7 +502,7 @@ function upsertDeviceHistoryPoint(previousHistory, newPoint) {
         ...previousHistory,
         [key]: sortByNewest([historyPoint, ...currentHistory]).slice(
             0,
-            HISTORY_LIMIT,
+            safeLimit,
         ),
     };
 }
@@ -585,7 +634,11 @@ function upsertDeviceStatus(previousDevices, statusUpdate) {
         return previousDevices;
     }
 
-    const lastSeen = statusUpdate.last_seen ?? new Date().toISOString();
+    const lastSeen =
+        statusUpdate.last_seen ??
+        statusUpdate.lastSeen ??
+        statusUpdate.device_status_last_seen ??
+        new Date().toISOString();
 
     let foundDevice = false;
 
@@ -715,6 +768,33 @@ function FitMapToDevices({ devices }) {
     return null;
 }
 
+function HistoryLimitSelect({ value, onChange, disabled, fullWidth = false }) {
+    return (
+        <label
+            className={`inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800 ${
+                fullWidth ? "w-full" : "w-full sm:w-auto"
+            } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+        >
+            <span className="whitespace-nowrap">Visa</span>
+
+            <select
+                value={value}
+                disabled={disabled}
+                onChange={(event) => onChange(Number(event.target.value))}
+                className="h-8 min-w-[58px] cursor-pointer rounded-xl border border-slate-300 bg-slate-100 px-2 text-center text-sm font-bold text-slate-950 outline-none transition hover:bg-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+            >
+                {HISTORY_LIMIT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                        {option}
+                    </option>
+                ))}
+            </select>
+
+            <span className="whitespace-nowrap">senaste</span>
+        </label>
+    );
+}
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const cellularDeviceIdsRef = useRef(new Set());
@@ -727,12 +807,17 @@ export default function Dashboard() {
     const [deviceHistoryById, setDeviceHistoryById] = useState({});
     const [selectedDeviceId, setSelectedDeviceId] = useState(null);
     const [showHistory, setShowHistory] = useState(false);
+    const [showPositionHistoryList, setShowPositionHistoryList] =
+        useState(false);
+    const [historyLimit, setHistoryLimit] = useState(DEFAULT_HISTORY_LIMIT);
     const [errorMessage, setErrorMessage] = useState("");
     const [loading, setLoading] = useState(true);
 
     const [socketStatus, setSocketStatus] = useState("disconnected");
     const [lastLiveUpdate, setLastLiveUpdate] = useState(null);
     const [nowTick, setNowTick] = useState(Date.now());
+
+    const safeHistoryLimit = getSafeHistoryLimit(historyLimit);
 
     const sortedDevices = useMemo(() => {
         return sortByNewest(filterCellularDevices(devices));
@@ -744,17 +829,11 @@ export default function Dashboard() {
         );
     }, [sortedDevices]);
 
-    // useEffect(() => {
-    //     if (!userId) return;
-
-    //     const interval = window.setInterval(() => {
-    //         loadDashboardData();
-    //     }, 20000);
-
-    //     return () => {
-    //         window.clearInterval(interval);
-    //     };
-    // }, [userId]);
+    /*
+        Ingen polling behövs för att status ska slå över till offline.
+        nowTick nedan triggar en re-render var 15:e sekund och getDeviceStatus()
+        räknar om status från last_seen.
+    */
 
     const positionedDevices = useMemo(() => {
         return sortedDevices.filter((device) => hasValidPosition(device));
@@ -782,8 +861,12 @@ export default function Dashboard() {
         return deviceHistoryById[String(deviceId)] ?? [];
     }, [selectedDevice, deviceHistoryById]);
 
+    const selectedMapHistory = useMemo(() => {
+        return selectedDeviceHistory.slice(0, safeHistoryLimit);
+    }, [selectedDeviceHistory, safeHistoryLimit]);
+
     const selectedHistoryPositions = useMemo(() => {
-        return selectedDeviceHistory
+        return selectedMapHistory
             .map((point) => {
                 const lat = Number(point.lat);
                 const lon = Number(point.lon);
@@ -796,7 +879,7 @@ export default function Dashboard() {
             })
             .filter(Boolean)
             .reverse();
-    }, [selectedDeviceHistory]);
+    }, [selectedMapHistory]);
 
     const dashboardStats = useMemo(() => {
         const total = sortedDevices.length;
@@ -834,6 +917,11 @@ export default function Dashboard() {
     function selectDevice(deviceId) {
         setSelectedDeviceId(deviceId);
         setShowHistory(false);
+        setShowPositionHistoryList(false);
+    }
+
+    function handleHistoryLimitChange(nextLimit) {
+        setHistoryLimit(getSafeHistoryLimit(nextLimit));
     }
 
     async function loadDashboardData() {
@@ -854,7 +942,9 @@ export default function Dashboard() {
                 axios.get(`/api/device/user/${userId}`),
                 axios.get(`/api/device/gnss/user/${userId}`),
                 axios.get(`/api/device/get/user/status/${userId}`),
-                axios.get(`/api/device/gnss/user/history/${userId}`),
+                axios.get(
+                    `/api/device/gnss/user/history/${userId}?limit=${HISTORY_FETCH_LIMIT}`,
+                ),
             ]);
 
             const registeredRows =
@@ -916,7 +1006,9 @@ export default function Dashboard() {
                     data_transport: "cellular",
                 }));
 
-            setDeviceHistoryById(groupHistoryByDevice(cellularHistoryRows));
+            setDeviceHistoryById(
+                groupHistoryByDevice(cellularHistoryRows, HISTORY_FETCH_LIMIT),
+            );
 
             const mergedRows = mergeRegisteredDevicesWithTelemetry(
                 cellularRegisteredRows,
@@ -1032,7 +1124,11 @@ export default function Dashboard() {
             );
 
             setDeviceHistoryById((previousHistory) =>
-                upsertDeviceHistoryPoint(previousHistory, cellularPoint),
+                upsertDeviceHistoryPoint(
+                    previousHistory,
+                    cellularPoint,
+                    HISTORY_FETCH_LIMIT,
+                ),
             );
 
             setSelectedDeviceId((currentSelectedId) => {
@@ -1128,14 +1224,43 @@ export default function Dashboard() {
         : false;
 
     const selectedHistoryCount = selectedDeviceHistory.length;
+    const selectedMapHistoryCount = selectedMapHistory.length;
+
+    const selectedTotalPositionCount = selectedDevice
+        ? getDeviceHistoryTotalCount(selectedDevice, selectedDeviceHistory)
+        : 0;
+
     const hasSelectedHistory = selectedHistoryCount > 0;
     const canShowRoute = showHistory && selectedHistoryPositions.length >= 2;
-    const selectedHistoryText = formatPositionCount(selectedHistoryCount);
+
+    const selectedHistoryText = formatPositionCount(selectedTotalPositionCount);
+
+    const selectedVisibleHistoryText = formatVisibleHistoryCount(
+        selectedHistoryCount,
+        selectedTotalPositionCount,
+    );
+
+    const selectedMapVisibleHistoryText = formatVisibleHistoryCount(
+        selectedMapHistoryCount,
+        selectedTotalPositionCount,
+    );
 
     const historyButtonLabel = getHistoryButtonLabel(
         showHistory,
-        selectedHistoryCount,
+        selectedMapHistoryCount,
     );
+
+    const historyListButtonLabel =
+        selectedHistoryCount === 0
+            ? "Ingen historik ännu"
+            : showPositionHistoryList
+              ? "Dölj positionshistorik"
+              : "Visa positionshistorik";
+
+    const historyBadgeText =
+        selectedTotalPositionCount > selectedHistoryCount
+            ? `${selectedHistoryCount}/${selectedTotalPositionCount}`
+            : selectedHistoryCount;
 
     return (
         <section className="mx-auto max-w-[1700px] px-4 py-5 md:px-6 md:py-8">
@@ -1414,12 +1539,20 @@ export default function Dashboard() {
 
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                                 {hasSelectedHistory
-                                                    ? `${selectedHistoryText} finns sparad för vald device.`
+                                                    ? `${selectedMapVisibleHistoryText} för vald device.`
                                                     : "Ingen positionshistorik att visa ännu."}
                                             </p>
                                         </div>
 
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                                            <HistoryLimitSelect
+                                                value={safeHistoryLimit}
+                                                onChange={
+                                                    handleHistoryLimitChange
+                                                }
+                                                disabled={!selectedDevice}
+                                            />
+
                                             <button
                                                 type="button"
                                                 disabled={!hasSelectedHistory}
@@ -1428,7 +1561,7 @@ export default function Dashboard() {
                                                         (current) => !current,
                                                     )
                                                 }
-                                                className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                                className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto ${
                                                     showHistory
                                                         ? "bg-blue-600 text-white hover:bg-blue-700"
                                                         : "border border-slate-200 bg-white text-slate-950 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
@@ -1632,7 +1765,7 @@ export default function Dashboard() {
                                         )}
 
                                         {showHistory &&
-                                            selectedDeviceHistory.map(
+                                            selectedMapHistory.map(
                                                 (point, index) => {
                                                     const lat = Number(
                                                         point.lat,
@@ -1947,7 +2080,7 @@ export default function Dashboard() {
 
                                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                                             {selectedDevice
-                                                ? `${selectedHistoryText} för ${getDeviceName(
+                                                ? `${selectedVisibleHistoryText} för ${getDeviceName(
                                                       selectedDevice,
                                                   )}`
                                                 : "Ingen device vald"}
@@ -1956,40 +2089,44 @@ export default function Dashboard() {
                                 </div>
 
                                 <span className="rounded-2xl bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                    {selectedHistoryCount}
+                                    {historyBadgeText}
                                 </span>
                             </div>
                         </div>
 
                         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <p className="text-sm text-slate-600 dark:text-slate-300">
-                                Historiken visas först när devicen har skickat
-                                minst en GNSS-position.{" "}
+                                Här visas positionsrader för vald device. Den
+                                här listan är avskild från kartan.{" "}
                                 {hasSelectedHistory
-                                    ? `Den här devicen har ${selectedHistoryText}.`
+                                    ? `Den här devicen har totalt ${selectedHistoryText}.`
                                     : selectedDevice
                                       ? "Den här devicen har ingen sparad positionshistorik ännu."
                                       : "Välj en device först."}
                             </p>
 
-                            <button
-                                type="button"
-                                disabled={!hasSelectedHistory}
-                                onClick={() =>
-                                    setShowHistory((current) => !current)
-                                }
-                                className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    showHistory
-                                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                                        : "border border-slate-200 bg-white text-slate-950 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
-                                }`}
-                            >
-                                <History className="h-4 w-4" />
-                                {historyButtonLabel}
-                            </button>
+                            <div className="mt-3 space-y-2">
+                                <button
+                                    type="button"
+                                    disabled={!hasSelectedHistory}
+                                    onClick={() =>
+                                        setShowPositionHistoryList(
+                                            (current) => !current,
+                                        )
+                                    }
+                                    className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                        showPositionHistoryList
+                                            ? "bg-blue-600 text-white hover:bg-blue-700"
+                                            : "border border-slate-200 bg-white text-slate-950 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+                                    }`}
+                                >
+                                    <History className="h-4 w-4" />
+                                    {historyListButtonLabel}
+                                </button>
+                            </div>
                         </div>
 
-                        {showHistory ? (
+                        {showPositionHistoryList ? (
                             <div className="max-h-[360px] overflow-y-auto p-4">
                                 {!selectedDevice ? (
                                     <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -2096,10 +2233,11 @@ export default function Dashboard() {
                                         <>
                                             Klicka på{" "}
                                             <span className="font-semibold text-slate-700 dark:text-slate-200">
-                                                {historyButtonLabel}
+                                                Visa positionshistorik
                                             </span>{" "}
-                                            för att se sparade positioner på
-                                            kartan.
+                                            för att se positionsraderna här i
+                                            panelen. Knappen ovanför kartan styr
+                                            bara vad som visas på kartan.
                                         </>
                                     ) : (
                                         "När devicen har skickat GNSS-positioner kommer historiken kunna visas här."

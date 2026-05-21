@@ -177,8 +177,8 @@ function getDeviceMarkerIcon(label) {
                 white-space:nowrap;
             ">
                 <div style="
-                    width:18px;
-                    height:18px;
+                    width:16px;
+                    height:16px;
                     border-radius:9999px;
                     background:#475569;
                     border:3px solid white;
@@ -187,127 +187,62 @@ function getDeviceMarkerIcon(label) {
                 "></div>
 
                 <div style="
-                    max-width:150px;
+                    max-width:132px;
                     overflow:hidden;
                     text-overflow:ellipsis;
-                    background:rgba(15,23,42,0.9);
+                    background:rgba(15,23,42,0.88);
                     color:white;
                     border:1px solid rgba(226,232,240,0.35);
                     border-radius:9999px;
-                    padding:4px 9px;
-                    font-size:11px;
+                    padding:3px 8px;
+                    font-size:10px;
                     font-weight:800;
-                    box-shadow:0 8px 20px rgba(15,23,42,0.28);
+                    box-shadow:0 8px 20px rgba(15,23,42,0.24);
                 ">
                     ${safeLabel}
                 </div>
             </div>
         `,
-        iconSize: [180, 28],
-        iconAnchor: [9, 14],
+        iconSize: [160, 26],
+        iconAnchor: [8, 13],
         popupAnchor: [0, -14],
     });
 }
 
 function getWorkAreaMarkerIcon(isSelected = false) {
-    const background = isSelected ? "#10b981" : "#64748b";
-    const border = isSelected ? "#bbf7d0" : "#e2e8f0";
-    const label = isSelected ? "VALT" : "AREA";
+    const outerSize = isSelected ? 28 : 24;
+    const innerSize = isSelected ? 14 : 11;
+    const color = isSelected ? "#10b981" : "#64748b";
+    const glow = isSelected
+        ? "0 0 0 8px rgba(16,185,129,0.16), 0 12px 28px rgba(15,23,42,0.35)"
+        : "0 10px 22px rgba(15,23,42,0.28)";
 
     return L.divIcon({
         className: "",
         html: `
             <div style="
-                width:${isSelected ? 54 : 46}px;
-                height:${isSelected ? 38 : 34}px;
-                border-radius:14px 14px 14px 4px;
-                background:${background};
-                border:4px solid ${border};
-                color:white;
+                width:${outerSize}px;
+                height:${outerSize}px;
+                border-radius:9999px;
+                background:white;
+                border:2px solid rgba(226,232,240,0.95);
+                box-shadow:${glow};
                 display:flex;
                 align-items:center;
                 justify-content:center;
-                font-size:9px;
-                font-weight:900;
-                letter-spacing:0.4px;
-                box-shadow:0 10px 24px rgba(15,23,42,0.35);
-                transform:rotate(-8deg);
             ">
-                <span style="transform:rotate(8deg);">${label}</span>
+                <div style="
+                    width:${innerSize}px;
+                    height:${innerSize}px;
+                    border-radius:9999px;
+                    background:${color};
+                "></div>
             </div>
         `,
-        iconSize: [isSelected ? 54 : 46, isSelected ? 38 : 34],
-        iconAnchor: [isSelected ? 27 : 23, isSelected ? 19 : 17],
-        popupAnchor: [0, -18],
+        iconSize: [outerSize, outerSize],
+        iconAnchor: [outerSize / 2, outerSize / 2],
+        popupAnchor: [0, -outerSize / 2],
     });
-}
-
-function MapLegend() {
-    const map = useMap();
-
-    useEffect(() => {
-        const legend = L.control({ position: "bottomleft" });
-
-        legend.onAdd = () => {
-            const div = L.DomUtil.create("div", "work-area-map-legend");
-
-            div.innerHTML = `
-                <div style="
-                    background:rgba(15,23,42,0.92);
-                    color:white;
-                    padding:12px 14px;
-                    border-radius:16px;
-                    box-shadow:0 12px 30px rgba(15,23,42,0.28);
-                    font-size:12px;
-                    line-height:1.4;
-                    min-width:220px;
-                ">
-                    <div style="font-weight:800;margin-bottom:8px;">Förklaring</div>
-
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                        <span style="
-                            width:18px;height:18px;border-radius:9999px;
-                            background:#475569;border:3px solid white;
-                            display:inline-block;
-                        "></span>
-                        <span>Device-position</span>
-                    </div>
-
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                        <span style="
-                            width:34px;height:24px;border-radius:10px 10px 10px 3px;
-                            background:#10b981;border:3px solid #bbf7d0;
-                            display:inline-flex;align-items:center;justify-content:center;
-                            font-size:7px;font-weight:900;color:white;
-                        ">VALT</span>
-                        <span>Markerat arbetsområde</span>
-                    </div>
-
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span style="
-                            width:30px;height:22px;border-radius:10px 10px 10px 3px;
-                            background:#64748b;border:3px solid #e2e8f0;
-                            display:inline-flex;align-items:center;justify-content:center;
-                            font-size:7px;font-weight:900;color:white;
-                        ">AREA</span>
-                        <span>Annat arbetsområde</span>
-                    </div>
-                </div>
-            `;
-
-            L.DomEvent.disableClickPropagation(div);
-
-            return div;
-        };
-
-        legend.addTo(map);
-
-        return () => {
-            legend.remove();
-        };
-    }, [map]);
-
-    return null;
 }
 
 function ResizeMap() {
@@ -452,7 +387,7 @@ function FitMapToWorkAreas({ workAreas, devicePositions, selectedLocation }) {
                 map.setView(points[0], 15);
             } else {
                 map.fitBounds(bounds, {
-                    padding: [50, 50],
+                    padding: [65, 65],
                     maxZoom: 14,
                 });
             }
@@ -876,7 +811,15 @@ export default function WorkAreas() {
     }
 
     function handleSelectWorkArea(area) {
-        setSelectedWorkAreaKey(getWorkAreaKey(area));
+        const areaKey = getWorkAreaKey(area);
+        const isAlreadySelected = selectedWorkAreaKey === areaKey;
+
+        if (isAlreadySelected) {
+            setSelectedWorkAreaKey("");
+            return;
+        }
+
+        setSelectedWorkAreaKey(areaKey);
         setFocusWorkAreaRequest((current) => current + 1);
     }
 
@@ -1050,8 +993,8 @@ export default function WorkAreas() {
                 </p>
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-[420px_minmax(0,1fr)]">
-                <div className="max-h-none space-y-4 lg:max-h-[calc(100dvh-170px)] lg:overflow-y-auto lg:pr-1">
+            <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+                <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <div className="flex items-start gap-3">
                             <div className="rounded-xl bg-slate-500/10 p-2">
@@ -1366,51 +1309,220 @@ export default function WorkAreas() {
                     )}
                 </div>
 
-                <div className="relative z-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
-                    <div className="relative z-0 h-[calc(100dvh-270px)] min-h-[640px] w-full">
-                        <MapContainer
-                            center={[59.3293, 18.0686]}
-                            zoom={6}
-                            className="z-0 h-full w-full"
-                        >
-                            <ResizeMap />
-                            <MapLegend />
+                <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                            <div className="flex items-start gap-3">
+                                <div className="rounded-xl bg-emerald-500/10 p-2">
+                                    <MapPinned className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                </div>
 
-                            <TileLayer
-                                attribution="&copy; OpenStreetMap contributors"
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            />
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-950 dark:text-white">
+                                        Arbetsområden på kartan
+                                    </h2>
 
-                            <FitMapToWorkAreas
-                                workAreas={workAreas}
-                                devicePositions={latestCellularDevicePositions}
-                                selectedLocation={selectedLocation}
-                            />
+                                    <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                        Klicka på ett arbetsområde i listan
+                                        eller direkt på kartan. Valt område
+                                        markeras grönt. Övriga områden visas
+                                        diskret i grått.
+                                    </p>
+                                </div>
+                            </div>
 
-                            <FlyToLocation
-                                selectedLocation={selectedLocation}
-                            />
+                            <div className="grid gap-2 text-xs sm:grid-cols-3 2xl:min-w-[470px]">
+                                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                    <span className="h-3.5 w-3.5 rounded-full border-2 border-white bg-slate-500 shadow" />
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        Device-position
+                                    </span>
+                                </div>
 
-                            <FlyToDevicePosition
-                                devicePosition={selectedDevicePosition}
-                                focusRequest={focusDeviceRequest}
-                            />
+                                <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                                    <span className="h-3.5 w-3.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.16)]" />
+                                    <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                                        Valt område
+                                    </span>
+                                </div>
 
-                            <FlyToWorkArea
-                                workArea={selectedWorkArea}
-                                focusRequest={focusWorkAreaRequest}
-                            />
+                                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                    <span className="h-3.5 w-3.5 rounded-full bg-slate-500" />
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        Annat område
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-                            {latestCellularDevicePositions.map(
-                                (device, index) => {
-                                    const lat = Number(device.lat);
-                                    const lon = Number(device.lon);
-                                    const acc =
-                                        device.acc === null ||
-                                        device.acc === undefined
-                                            ? null
-                                            : Number(device.acc);
-                                    const deviceId = getPointDeviceId(device);
+                    <div className="relative z-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                        <div className="relative z-0 h-[430px] w-full sm:h-[520px] xl:h-[calc(100dvh-360px)] xl:min-h-[560px]">
+                            <MapContainer
+                                center={[59.3293, 18.0686]}
+                                zoom={6}
+                                className="z-0 h-full w-full"
+                            >
+                                <ResizeMap />
+
+                                <TileLayer
+                                    attribution="&copy; OpenStreetMap contributors"
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                />
+
+                                <FitMapToWorkAreas
+                                    workAreas={workAreas}
+                                    devicePositions={
+                                        latestCellularDevicePositions
+                                    }
+                                    selectedLocation={selectedLocation}
+                                />
+
+                                <FlyToLocation
+                                    selectedLocation={selectedLocation}
+                                />
+
+                                <FlyToDevicePosition
+                                    devicePosition={selectedDevicePosition}
+                                    focusRequest={focusDeviceRequest}
+                                />
+
+                                <FlyToWorkArea
+                                    workArea={selectedWorkArea}
+                                    focusRequest={focusWorkAreaRequest}
+                                />
+
+                                {latestCellularDevicePositions.map(
+                                    (device, index) => {
+                                        const lat = Number(device.lat);
+                                        const lon = Number(device.lon);
+                                        const acc =
+                                            device.acc === null ||
+                                            device.acc === undefined
+                                                ? null
+                                                : Number(device.acc);
+                                        const deviceId =
+                                            getPointDeviceId(device);
+
+                                        if (
+                                            !Number.isFinite(lat) ||
+                                            !Number.isFinite(lon)
+                                        ) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <Fragment
+                                                key={`device-position-${deviceId ?? index}`}
+                                            >
+                                                {acc !== null &&
+                                                    Number.isFinite(acc) && (
+                                                        <Circle
+                                                            center={[lat, lon]}
+                                                            radius={Math.min(
+                                                                Math.max(
+                                                                    acc,
+                                                                    3,
+                                                                ),
+                                                                250,
+                                                            )}
+                                                            pathOptions={{
+                                                                color: "#64748b",
+                                                                fillColor:
+                                                                    "#94a3b8",
+                                                                fillOpacity: 0.08,
+                                                                weight: 1,
+                                                            }}
+                                                        />
+                                                    )}
+
+                                                <Marker
+                                                    position={[lat, lon]}
+                                                    icon={getDeviceMarkerIcon(
+                                                        getDeviceLabel(device),
+                                                    )}
+                                                    opacity={0.92}
+                                                    zIndexOffset={650}
+                                                >
+                                                    <Popup>
+                                                        <div>
+                                                            <p className="font-bold">
+                                                                Device-position
+                                                            </p>
+
+                                                            <p className="font-medium">
+                                                                {getDeviceFullLabel(
+                                                                    device,
+                                                                )}
+                                                            </p>
+
+                                                            <p>
+                                                                ID:{" "}
+                                                                {deviceId ??
+                                                                    "N/A"}
+                                                            </p>
+
+                                                            <p>
+                                                                Accuracy:{" "}
+                                                                {device.acc ??
+                                                                    "N/A"}{" "}
+                                                                m
+                                                            </p>
+
+                                                            <p>
+                                                                Tid:{" "}
+                                                                {formatTimestamp(
+                                                                    device.data_timestamp ??
+                                                                        device.created_at,
+                                                                )}
+                                                            </p>
+                                                        </div>
+                                                    </Popup>
+                                                </Marker>
+                                            </Fragment>
+                                        );
+                                    },
+                                )}
+
+                                {selectedWorkArea &&
+                                    selectedWorkAreaDevicePosition && (
+                                        <Polyline
+                                            positions={[
+                                                [
+                                                    Number(
+                                                        selectedWorkArea.lat,
+                                                    ),
+                                                    Number(
+                                                        selectedWorkArea.lon,
+                                                    ),
+                                                ],
+                                                [
+                                                    Number(
+                                                        selectedWorkAreaDevicePosition.lat,
+                                                    ),
+                                                    Number(
+                                                        selectedWorkAreaDevicePosition.lon,
+                                                    ),
+                                                ],
+                                            ]}
+                                            pathOptions={{
+                                                color: "#10b981",
+                                                weight: 4,
+                                                dashArray: "8 8",
+                                                opacity: 0.9,
+                                            }}
+                                        />
+                                    )}
+
+                                {workAreas.map((area) => {
+                                    const lat = Number(area.lat);
+                                    const lon = Number(area.lon);
+                                    const radiusMeters = Number(
+                                        area.circle_radius_m,
+                                    );
+                                    const areaKey = getWorkAreaKey(area);
+                                    const isSelected =
+                                        areaKey === selectedWorkAreaKey;
 
                                     if (
                                         !Number.isFinite(lat) ||
@@ -1420,285 +1532,191 @@ export default function WorkAreas() {
                                     }
 
                                     return (
-                                        <Fragment
-                                            key={`device-position-${deviceId ?? index}`}
-                                        >
-                                            {acc !== null &&
-                                                Number.isFinite(acc) && (
-                                                    <Circle
-                                                        center={[lat, lon]}
-                                                        radius={Math.min(
-                                                            Math.max(acc, 3),
-                                                            250,
-                                                        )}
-                                                        pathOptions={{
-                                                            color: "#64748b",
-                                                            fillColor:
-                                                                "#94a3b8",
-                                                            fillOpacity: 0.08,
-                                                            weight: 1,
-                                                        }}
-                                                    />
-                                                )}
+                                        <Fragment key={areaKey}>
+                                            <Circle
+                                                center={[lat, lon]}
+                                                radius={radiusMeters || 100}
+                                                pathOptions={{
+                                                    color: isSelected
+                                                        ? "#10b981"
+                                                        : "#64748b",
+                                                    fillColor: isSelected
+                                                        ? "#10b981"
+                                                        : "#94a3b8",
+                                                    fillOpacity: isSelected
+                                                        ? 0.22
+                                                        : 0.08,
+                                                    weight: isSelected ? 4 : 2,
+                                                }}
+                                            />
 
                                             <Marker
                                                 position={[lat, lon]}
-                                                icon={getDeviceMarkerIcon(
-                                                    getDeviceLabel(device),
+                                                icon={getWorkAreaMarkerIcon(
+                                                    isSelected,
                                                 )}
-                                                opacity={0.92}
-                                                zIndexOffset={650}
+                                                opacity={isSelected ? 1 : 0.78}
+                                                zIndexOffset={
+                                                    isSelected ? 1000 : 450
+                                                }
+                                                eventHandlers={{
+                                                    click: () =>
+                                                        handleSelectWorkArea(
+                                                            area,
+                                                        ),
+                                                }}
                                             >
                                                 <Popup>
                                                     <div>
                                                         <p className="font-bold">
-                                                            Device-position
+                                                            {isSelected
+                                                                ? "Markerat arbetsområde"
+                                                                : "Annat arbetsområde"}
                                                         </p>
 
                                                         <p className="font-medium">
-                                                            {getDeviceFullLabel(
-                                                                device,
+                                                            {area.matchedAddress ||
+                                                                "Sparat arbetsområde"}
+                                                        </p>
+
+                                                        <p>
+                                                            Tillhör:{" "}
+                                                            {getAreaDeviceLabel(
+                                                                area,
                                                             )}
                                                         </p>
 
                                                         <p>
-                                                            ID:{" "}
-                                                            {deviceId ?? "N/A"}
+                                                            Device ID:{" "}
+                                                            {area.device_ID}
                                                         </p>
 
                                                         <p>
-                                                            Accuracy:{" "}
-                                                            {device.acc ??
-                                                                "N/A"}{" "}
+                                                            Radie:{" "}
+                                                            {radiusMeters ||
+                                                                100}{" "}
                                                             m
                                                         </p>
 
                                                         <p>
-                                                            Tid:{" "}
-                                                            {formatTimestamp(
-                                                                device.data_timestamp ??
-                                                                    device.created_at,
-                                                            )}
+                                                            Status:{" "}
+                                                            {area.active
+                                                                ? "Aktiv"
+                                                                : "Inaktiv"}
                                                         </p>
+
+                                                        {isSelected &&
+                                                            selectedWorkAreaDevicePosition && (
+                                                                <p>
+                                                                    Grön
+                                                                    streckad
+                                                                    linje visar
+                                                                    koppling
+                                                                    till
+                                                                    devicens
+                                                                    senaste
+                                                                    position.
+                                                                </p>
+                                                            )}
                                                     </div>
                                                 </Popup>
                                             </Marker>
                                         </Fragment>
                                     );
-                                },
-                            )}
+                                })}
 
-                            {selectedWorkArea &&
-                                selectedWorkAreaDevicePosition && (
-                                    <Polyline
-                                        positions={[
-                                            [
-                                                Number(selectedWorkArea.lat),
-                                                Number(selectedWorkArea.lon),
-                                            ],
-                                            [
-                                                Number(
-                                                    selectedWorkAreaDevicePosition.lat,
-                                                ),
-                                                Number(
-                                                    selectedWorkAreaDevicePosition.lon,
-                                                ),
-                                            ],
+                                {selectedLocation && (
+                                    <Circle
+                                        center={[
+                                            selectedLocation.lat,
+                                            selectedLocation.lng,
                                         ]}
+                                        radius={Number(radius) || 100}
                                         pathOptions={{
-                                            color: "#10b981",
-                                            weight: 4,
+                                            color: "#7c3aed",
+                                            fillColor: "#8b5cf6",
+                                            fillOpacity: 0.12,
+                                            weight: 3,
                                             dashArray: "8 8",
-                                            opacity: 0.9,
                                         }}
-                                    />
+                                    >
+                                        <Popup>
+                                            <div>
+                                                <p className="font-bold">
+                                                    Förhandsvisning av nytt
+                                                    område
+                                                </p>
+
+                                                <p className="font-medium">
+                                                    {
+                                                        selectedLocation.matchedAddress
+                                                    }
+                                                </p>
+
+                                                <p>Radie: {radius} m</p>
+
+                                                <p>
+                                                    Sparas för:{" "}
+                                                    {getSelectedDeviceLabel()}
+                                                </p>
+
+                                                {selectedLocationIsAddressBased && (
+                                                    <p>
+                                                        Detta område är valt via
+                                                        adressökning.
+                                                    </p>
+                                                )}
+
+                                                {selectedLocationIsDeviceBased && (
+                                                    <p>
+                                                        Detta område är baserat
+                                                        på devicens senaste
+                                                        position.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </Popup>
+                                    </Circle>
                                 )}
+                            </MapContainer>
+                        </div>
+                    </div>
 
-                            {workAreas.map((area) => {
-                                const lat = Number(area.lat);
-                                const lon = Number(area.lon);
-                                const radiusMeters = Number(
-                                    area.circle_radius_m,
-                                );
-                                const areaKey = getWorkAreaKey(area);
-                                const isSelected =
-                                    areaKey === selectedWorkAreaKey;
-
-                                if (
-                                    !Number.isFinite(lat) ||
-                                    !Number.isFinite(lon)
-                                ) {
-                                    return null;
-                                }
-
-                                return (
-                                    <Fragment key={areaKey}>
-                                        <Circle
-                                            center={[lat, lon]}
-                                            radius={radiusMeters || 100}
-                                            pathOptions={{
-                                                color: isSelected
-                                                    ? "#10b981"
-                                                    : "#64748b",
-                                                fillColor: isSelected
-                                                    ? "#10b981"
-                                                    : "#94a3b8",
-                                                fillOpacity: isSelected
-                                                    ? 0.22
-                                                    : 0.08,
-                                                weight: isSelected ? 4 : 2,
-                                            }}
-                                        />
-
-                                        <Marker
-                                            position={[lat, lon]}
-                                            icon={getWorkAreaMarkerIcon(
-                                                isSelected,
-                                            )}
-                                            opacity={isSelected ? 1 : 0.7}
-                                            zIndexOffset={
-                                                isSelected ? 1000 : 450
-                                            }
-                                            eventHandlers={{
-                                                click: () =>
-                                                    handleSelectWorkArea(area),
-                                            }}
-                                        >
-                                            <Popup>
-                                                <div>
-                                                    <p className="font-bold">
-                                                        {isSelected
-                                                            ? "Markerat arbetsområde"
-                                                            : "Annat arbetsområde"}
-                                                    </p>
-
-                                                    <p className="font-medium">
-                                                        {area.matchedAddress ||
-                                                            "Sparat arbetsområde"}
-                                                    </p>
-
-                                                    <p>
-                                                        Tillhör:{" "}
-                                                        {getAreaDeviceLabel(
-                                                            area,
-                                                        )}
-                                                    </p>
-
-                                                    <p>
-                                                        Device ID:{" "}
-                                                        {area.device_ID}
-                                                    </p>
-
-                                                    <p>
-                                                        Radie:{" "}
-                                                        {radiusMeters || 100} m
-                                                    </p>
-
-                                                    <p>
-                                                        Status:{" "}
-                                                        {area.active
-                                                            ? "Aktiv"
-                                                            : "Inaktiv"}
-                                                    </p>
-
-                                                    {isSelected &&
-                                                        selectedWorkAreaDevicePosition && (
-                                                            <p>
-                                                                Grön streckad
-                                                                linje visar
-                                                                koppling till
-                                                                devicens senaste
-                                                                position.
-                                                            </p>
-                                                        )}
-                                                </div>
-                                            </Popup>
-                                        </Marker>
-                                    </Fragment>
-                                );
-                            })}
-
-                            {selectedLocation && (
-                                <Circle
-                                    center={[
-                                        selectedLocation.lat,
-                                        selectedLocation.lng,
-                                    ]}
-                                    radius={Number(radius) || 100}
-                                    pathOptions={{
-                                        color: "#7c3aed",
-                                        fillColor: "#8b5cf6",
-                                        fillOpacity: 0.12,
-                                        weight: 3,
-                                        dashArray: "8 8",
-                                    }}
-                                >
-                                    <Popup>
-                                        <div>
-                                            <p className="font-bold">
-                                                Förhandsvisning av nytt område
-                                            </p>
-
-                                            <p className="font-medium">
-                                                {
-                                                    selectedLocation.matchedAddress
-                                                }
-                                            </p>
-
-                                            <p>Radie: {radius} m</p>
-
-                                            <p>
-                                                Sparas för:{" "}
-                                                {getSelectedDeviceLabel()}
-                                            </p>
-
-                                            {selectedLocationIsAddressBased && (
-                                                <p>
-                                                    Detta område är valt via
-                                                    adressökning.
-                                                </p>
-                                            )}
-
-                                            {selectedLocationIsDeviceBased && (
-                                                <p>
-                                                    Detta område är baserat på
-                                                    devicens senaste position.
-                                                </p>
-                                            )}
-                                        </div>
-                                    </Popup>
-                                </Circle>
-                            )}
-                        </MapContainer>
-
-                        <div className="absolute right-4 top-4 z-[1000] hidden max-h-[calc(100%-2rem)] w-[340px] overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-2xl backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 xl:block">
-                            <div className="mb-3">
-                                <h2 className="text-sm font-bold text-slate-950 dark:text-white">
-                                    Arbetsområden
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 className="text-base font-bold text-slate-950 dark:text-white">
+                                    Sparade arbetsområden
                                 </h2>
 
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    Klicka på ett område. Markerat område blir
-                                    grönt på kartan. Övriga områden blir grå.
+                                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                    Listan ligger under kartan och kan scrollas
+                                    när det finns flera områden.
                                 </p>
                             </div>
 
-                            {workAreasError && (
-                                <div className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300">
-                                    {workAreasError}
-                                </div>
-                            )}
+                            <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                {workAreas.length}
+                            </span>
+                        </div>
 
-                            {workAreasLoading ? (
-                                <p className="rounded-xl border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Laddar områden...
-                                </p>
-                            ) : workAreas.length === 0 ? (
-                                <p className="rounded-xl border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Inga sparade områden ännu.
-                                </p>
-                            ) : (
-                                <div className="space-y-2">
+                        {workAreasError && (
+                            <div className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300">
+                                {workAreasError}
+                            </div>
+                        )}
+
+                        {workAreasLoading ? (
+                            <p className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                Laddar områden...
+                            </p>
+                        ) : workAreas.length === 0 ? (
+                            <p className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                Inga sparade områden ännu.
+                            </p>
+                        ) : (
+                            <div className="max-h-[220px] overflow-y-auto pr-1">
+                                <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
                                     {workAreas.map((area) => {
                                         const areaKey = getWorkAreaKey(area);
                                         const isSelected =
@@ -1721,52 +1739,50 @@ export default function WorkAreas() {
                                                 onClick={() =>
                                                     handleSelectWorkArea(area)
                                                 }
-                                                className={`w-full rounded-xl border p-3 text-left text-xs transition ${
+                                                className={`w-full rounded-2xl border p-3 text-left text-xs transition ${
                                                     isSelected
-                                                        ? "border-emerald-300 bg-emerald-500/15"
-                                                        : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+                                                        ? "border-emerald-400 bg-emerald-500/15 shadow-sm"
+                                                        : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-800"
                                                 }`}
                                             >
-                                                <div className="min-w-0">
-                                                    <div className="mb-1 flex flex-wrap gap-1">
-                                                        {isSelected && (
-                                                            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                                                                MARKERAT
-                                                            </span>
-                                                        )}
-
-                                                        <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                                                            {hasDevicePosition
-                                                                ? "GNSS finns"
-                                                                : "Ingen GNSS"}
+                                                <div className="mb-2 flex flex-wrap gap-1">
+                                                    {isSelected && (
+                                                        <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                                                            VALT
                                                         </span>
-                                                    </div>
+                                                    )}
 
-                                                    <p className="line-clamp-2 font-bold text-slate-950 dark:text-white">
-                                                        {area.matchedAddress ||
-                                                            "Sparat arbetsområde"}
-                                                    </p>
-
-                                                    <p className="mt-1 text-slate-500 dark:text-slate-400">
-                                                        Tillhör:{" "}
-                                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                                            {getAreaDeviceLabel(
-                                                                area,
-                                                            )}
-                                                        </span>
-                                                    </p>
-
-                                                    <p className="mt-1 text-slate-500 dark:text-slate-400">
-                                                        Radie:{" "}
-                                                        {area.circle_radius_m} m
-                                                    </p>
+                                                    <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                                                        {hasDevicePosition
+                                                            ? "GNSS finns"
+                                                            : "Ingen GNSS"}
+                                                    </span>
                                                 </div>
+
+                                                <p className="line-clamp-2 font-bold text-slate-950 dark:text-white">
+                                                    {area.matchedAddress ||
+                                                        "Sparat arbetsområde"}
+                                                </p>
+
+                                                <p className="mt-1 text-slate-500 dark:text-slate-400">
+                                                    Tillhör:{" "}
+                                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                                        {getAreaDeviceLabel(
+                                                            area,
+                                                        )}
+                                                    </span>
+                                                </p>
+
+                                                <p className="mt-1 text-slate-500 dark:text-slate-400">
+                                                    Radie:{" "}
+                                                    {area.circle_radius_m} m
+                                                </p>
                                             </button>
                                         );
                                     })}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

@@ -25,6 +25,7 @@ import LocationSearchCard from "../components/LocationSearchCard";
 import { Button } from "@/components/ui/button";
 
 const MOCK_CELLULAR_URL = "/api/device/mockdata/cellular";
+const MOCK_CELLULAR_STATUS_URL = "/api/device/mockdata/cellular/add/status";
 
 const DEFAULT_CENTER = {
     lat: 59.329323,
@@ -457,6 +458,22 @@ export default function MockCellular() {
         }
     }
 
+    async function updateMockDeviceStatus(deviceId) {
+        const response = await axios.post(MOCK_CELLULAR_STATUS_URL, {
+            device_ID: deviceId,
+        });
+
+        if (response.data?.success === false) {
+            throw new Error(
+                response.data?.message ||
+                    response.data?.error ||
+                    "GNSS-data skickades men device-status kunde inte uppdateras.",
+            );
+        }
+
+        return response.data;
+    }
+
     function startLocalLivePreview(routeToPlay) {
         clearLiveTimer();
 
@@ -539,11 +556,15 @@ export default function MockCellular() {
                 ? response.data.data.route
                 : routeToSend;
 
+            await updateMockDeviceStatus(numericDeviceId);
+
+            window.dispatchEvent(new Event("devices-updated"));
+
             setSentPositions(resultRoute);
             setLiveIndex(Math.max(resultRoute.length - 1, 0));
 
             setStatusMessage(
-                `${resultRoute.length} positioner skickades för ${
+                `${resultRoute.length} positioner skickades och status uppdaterades för ${
                     selectedDevice?.device_name || "vald device"
                 }.`,
             );
@@ -829,7 +850,9 @@ export default function MockCellular() {
                                     className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 font-bold text-white"
                                 >
                                     <Send className="mr-2 h-4 w-4" />
-                                    {sending ? "Skickar..." : "Skicka"}
+                                    {sending
+                                        ? "Skickar och uppdaterar status..."
+                                        : "Skicka"}
                                 </Button>
                             </div>
 

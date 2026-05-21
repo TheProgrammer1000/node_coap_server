@@ -139,21 +139,6 @@ export async function getGnssDataByDeviceId(deviceId: number, limit = 50) {
     return rows;
 }
 
-export async function add_device_zone_state(
-    device_ID: number,
-    status: string,
-    device_area_distance_m: number,
-) {
-    const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_device_zone_state(?, ?, ?);",
-        [device_ID, status, device_area_distance_m],
-    );
-
-    console.log(result);
-
-    return result[0];
-}
-
 export async function get_device_arealocation(device_ID: number) {
     const [result] = await pool.query<RowDataPacket[][]>(
         "CALL get_device_arealocation(?);",
@@ -211,17 +196,6 @@ export async function add_device_state(
     console.log(result);
 
     return result[0];
-}
-
-export async function get_all_device_zone_alert(device_ID: number) {
-    const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_all_device_zone_alert(?);",
-        [device_ID],
-    );
-
-    console.log(result);
-
-    return result;
 }
 
 export async function get_all_devices_alert_by_type(

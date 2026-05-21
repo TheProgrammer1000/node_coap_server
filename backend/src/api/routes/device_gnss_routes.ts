@@ -50,8 +50,9 @@ router.get("/user/:user_ID", async (req, res) => {
 router.get("/user/history/:user_ID", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
+        const limit: number = Number(req.query.limit);
 
-        const data = await get_user_devices_latest_positions(user_ID, 5);
+        const data = await get_user_devices_latest_positions(user_ID, limit);
 
         if (data.length > 0) {
             console.log(data);

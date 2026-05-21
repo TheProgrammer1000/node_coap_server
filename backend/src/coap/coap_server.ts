@@ -353,13 +353,13 @@ export function startCoapServer() {
                     }
 
                     try {
-                        const response = await add_device_status(
+                        const status_response = await add_device_status(
                             sensorData.device_ID,
                             sensorData.battery_percent,
                             sensorData.firmware_version,
                         );
 
-                        console.log("response: ", response);
+                        console.log("status_response: ", status_response);
 
                         const [data] = await get_userID_by_deviceID(
                             sensorData.device_ID,
