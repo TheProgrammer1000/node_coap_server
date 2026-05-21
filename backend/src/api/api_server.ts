@@ -92,7 +92,7 @@ export async function sendLiveDeviceStatus(
     const roomName = `user:${userId}`;
     const socketsInRoom = await io.in(roomName).fetchSockets();
 
-    console.log("Trying to emit live geofence alert");
+    console.log("Trying to emit live device status");
     console.log("Room:", roomName);
     console.log("Sockets in room:", socketsInRoom.length);
     console.log("device_last_seen:", status);
