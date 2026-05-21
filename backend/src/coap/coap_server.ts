@@ -255,7 +255,19 @@ export function startCoapServer() {
                                     areaLocation.matchedAddress ?? null,
                             };
 
+                            console.log("TRYING TO SEND LIVE GEOFENCE ALERT:", {
+                                userId,
+                                previousStatus,
+                                currentStatus: geofence.status,
+                            });
+
                             await sendLiveGeofenceAlert(userId, alertPayload);
+
+                            console.log("LIVE GEOFENCE ALERT SENT:", {
+                                userId,
+                                room: `user:${userId}`,
+                                alertPayload,
+                            });
                         } catch (err) {
                             console.error(
                                 "Failed to create/send geofence alert:",
