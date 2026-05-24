@@ -7,9 +7,9 @@ import {
     update_device_ble_data_session,
     get_device_ble_motion_session_data_by_user,
     get_all_device_ble,
-} from "../../db/db.js";
+} from "../../../db/db.js";
 
-import { ble_motion_packet_type } from "../../types.js";
+import { ble_motion_packet_type } from "../../../types.js";
 
 const router = Router();
 

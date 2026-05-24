@@ -1,7 +1,7 @@
 import { response, Router } from "express";
 
-import { sendMockPositions } from "../../coap/demo_routes.js";
-import { add_device_status, add_device_state } from "../../db/db.js";
+import { sendMockPositions } from "../../../coap/demo_routes.js";
+import { add_device_status, add_device_state } from "../../../db/db.js";
 
 const router = Router();
 

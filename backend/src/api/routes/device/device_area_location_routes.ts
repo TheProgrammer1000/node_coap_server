@@ -2,9 +2,9 @@ import { Router } from "express";
 import {
     add_device_arealocation,
     get_user_arealocations,
-} from "../../db/db.js";
+} from "../../../db/db.js";
 
-import { work_area_payload } from "../../types.js";
+import { work_area_payload } from "../../../types.js";
 
 const router = Router();
 

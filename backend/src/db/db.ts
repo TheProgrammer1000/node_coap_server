@@ -209,7 +209,22 @@ export async function get_all_devices_alert_by_type(
 
     console.log(result);
 
-    return result;
+    return result[0];
+}
+
+export async function get_all_device_alert(
+    device_ID: number,
+    status_type: string,
+    user_ID: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_all_device_alert(?, ?, ?);",
+        [device_ID, status_type, user_ID],
+    );
+
+    console.log(result);
+
+    return result[0];
 }
 
 export async function add_device_status(
@@ -236,9 +251,9 @@ export async function get_userID_by_deviceID(device_ID: number) {
     return result;
 }
 
-export async function get_user_devices_status(user_ID: number) {
+export async function get_user_devices_lastseen_status(user_ID: number) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_user_devices_status(?);",
+        "CALL get_user_devices_lastseen_status(?);",
         [user_ID],
     );
 
@@ -341,6 +356,60 @@ export async function get_user_devices_with_status(user_ID: number) {
         "CALL get_user_devices_with_status(?);",
         [user_ID],
     );
+
+    return result[0];
+}
+
+export async function get_all_devices_from_userID(user_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_all_devices_from_userID(?);",
+        [user_ID],
+    );
+
+    console.log(result);
+
+    return result[0];
+}
+
+export async function get_user_device_with_status(
+    user_ID: number,
+    device_ID: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_user_device_with_status(?, ?);",
+        [user_ID, device_ID],
+    );
+
+    return result[0];
+}
+
+export async function get_gnss_data_position(
+    user_ID: number,
+    device_ID: number,
+    limit: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_gnss_data_position(?, ?, ?);",
+        [user_ID, device_ID, limit],
+    );
+
+    return result[0];
+}
+
+// p_device_ID bigint, p_lat decimal(10,7), p_lon decimal(10,7), p_acc decimal(5,2)
+
+export async function add_device_gnss_data(
+    device_ID: number,
+    lat: number,
+    lon: number,
+    acc: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_gnss_data(?, ?, ?, ?);",
+        [device_ID, lat, lon, acc],
+    );
+
+    console.log(result);
 
     return result[0];
 }

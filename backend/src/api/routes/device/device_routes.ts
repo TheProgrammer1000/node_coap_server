@@ -9,13 +9,14 @@ import {
     add_device_arealocation,
     get_user_arealocations,
     get_gnss_data_for_arealocation,
-    get_user_devices_status,
     get_device_user_by_userID,
     get_user_devices_with_status,
-} from "../../db/db.js";
+    get_all_devices_from_userID,
+    get_user_device_with_status,
+} from "../../../db/db.js";
 
-import { device_param, work_area_payload } from "../../types.js";
-import { checkGeofenceStatus } from "../../utils/geofence.js";
+import { device_param, work_area_payload } from "../../../types.js";
+import { checkGeofenceStatus } from "../../../utils/geofence.js";
 
 const router = Router();
 
@@ -98,56 +99,6 @@ router.get("/all/user/:user_ID", async (req, res) => {
     }
 });
 
-router.get("/get/status/:user_ID", async (req, res) => {
-    try {
-        const user_ID = Number(req.params.user_ID);
-
-        const data = await get_user_devices_status(user_ID);
-
-        if (data.length > 0) {
-            console.log(data);
-            res.json({ success: true, data });
-        } else {
-            res.json({
-                success: false,
-                msg: "no devices register to user and cannot get device status",
-            });
-        }
-    } catch (error) {
-        console.error("Failed to get device status:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to get device status",
-        });
-    }
-});
-
-router.get("/get/user/status/:user_ID", async (req, res) => {
-    try {
-        const user_ID = Number(req.params.user_ID);
-
-        const data = await get_user_devices_with_status(user_ID);
-
-        if (data.length > 0) {
-            console.log(data);
-            res.json({ success: true, data });
-        } else {
-            res.json({
-                success: false,
-                msg: "no devices register to user and cannot get device status",
-            });
-        }
-    } catch (error) {
-        console.error("Failed to get device status:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to get device status",
-        });
-    }
-});
-
 router.get("/get/user/:user_ID", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
@@ -171,6 +122,33 @@ router.get("/get/user/:user_ID", async (req, res) => {
         return res.status(500).json({
             success: false,
             error: "Failed to get device status",
+        });
+    }
+});
+
+router.get("/get/all/:user_ID", async (req, res) => {
+    try {
+        const user_ID = Number(req.params.user_ID);
+
+        const data = await get_all_devices_from_userID(user_ID);
+
+        console.log("data: ", data);
+
+        if (data.length > 0) {
+            console.log(data);
+            res.json({ success: true, data });
+        } else {
+            res.json({
+                success: false,
+                msg: "no devices",
+            });
+        }
+    } catch (error) {
+        console.error("Failed to get devices:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to get devices",
         });
     }
 });

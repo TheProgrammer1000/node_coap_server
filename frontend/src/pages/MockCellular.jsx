@@ -436,7 +436,7 @@ export default function MockCellular() {
             setErrorMessage("");
 
             const response = await axios.get(
-                `/api/device/get/user/status/${userId}`,
+                `/api/device/status/get/all/${userId}`,
             );
 
             const devices = normalizeDevicesResponse(response.data);

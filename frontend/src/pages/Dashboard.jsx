@@ -941,7 +941,7 @@ export default function Dashboard() {
             ] = await Promise.allSettled([
                 axios.get(`/api/device/user/${userId}`),
                 axios.get(`/api/device/gnss/user/${userId}`),
-                axios.get(`/api/device/get/user/status/${userId}`),
+                axios.get(`/api/device/status/get/all/${userId}`),
                 axios.get(
                     `/api/device/gnss/user/history/${userId}?limit=${HISTORY_FETCH_LIMIT}`,
                 ),

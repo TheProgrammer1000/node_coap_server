@@ -216,7 +216,7 @@ export default function Navbar() {
             setDevicesLoaded(false);
 
             const response = await axios.get(
-                `/api/device/get/user/status/${userId}`,
+                `/api/device/status/get/all/${userId}`,
             );
 
             console.log("Navbar devices response:", response.data);
