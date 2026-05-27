@@ -32,6 +32,85 @@ import { Button } from "@/components/ui/button";
 
 const SELECTED_TRANSPORT_STORAGE_KEY = "selected_data_transport";
 
+/*
+    Routes som får finnas utan att behöva synas i navbaren.
+    Det gör att /devices/:device_ID och framtida detail-sidor inte redirectas.
+*/
+const PUBLIC_PROTECTED_PATHS = [
+    "/landing-page",
+    "/register-device",
+    "/account",
+];
+
+const DEVICE_REQUIRED_PATHS = ["/device-events"];
+const DEVICE_REQUIRED_PATH_PREFIXES = ["/devices/"];
+
+const CELLULAR_ONLY_PATHS = [
+    "/dashboard",
+    "/work-areas",
+    "/geofence",
+    "/mock-cellular-route",
+];
+
+const BLE_ONLY_PATHS = ["/motion-live", "/mock-motion-session"];
+
+function isExactPath(pathname, paths) {
+    return paths.includes(pathname);
+}
+
+function startsWithAny(pathname, prefixes) {
+    return prefixes.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isPublicProtectedPath(pathname) {
+    return isExactPath(pathname, PUBLIC_PROTECTED_PATHS);
+}
+
+function isDeviceRequiredPath(pathname) {
+    return (
+        isExactPath(pathname, DEVICE_REQUIRED_PATHS) ||
+        startsWithAny(pathname, DEVICE_REQUIRED_PATH_PREFIXES)
+    );
+}
+
+function isCellularOnlyPath(pathname) {
+    return isExactPath(pathname, CELLULAR_ONLY_PATHS);
+}
+
+function isBleOnlyPath(pathname) {
+    return isExactPath(pathname, BLE_ONLY_PATHS);
+}
+
+function isAllowedProtectedPath(pathname, deviceGroups) {
+    if (isPublicProtectedPath(pathname)) {
+        return true;
+    }
+
+    if (!deviceGroups.totalCount) {
+        return false;
+    }
+
+    if (isDeviceRequiredPath(pathname)) {
+        return true;
+    }
+
+    if (isCellularOnlyPath(pathname)) {
+        return deviceGroups.hasCellular;
+    }
+
+    if (isBleOnlyPath(pathname)) {
+        return deviceGroups.hasBle;
+    }
+
+    /*
+        Viktigt:
+        Okända protected routes blockeras inte av Navbar.
+        App.jsx får avgöra om routen finns.
+        Då slipper du lägga varje ny sida i navbaren.
+    */
+    return true;
+}
+
 function getStoredUser() {
     try {
         const storedUser = localStorage.getItem("user");
@@ -54,22 +133,39 @@ function normalizeTransport(value) {
     return "cellular";
 }
 
-function normalizeDevicesResponse(responseData) {
-    let devices = [];
-
+function getRows(responseData) {
     if (Array.isArray(responseData)) {
-        devices = responseData;
-    } else if (Array.isArray(responseData?.data)) {
-        devices = responseData.data;
-    } else if (Array.isArray(responseData?.data?.data)) {
-        devices = responseData.data.data;
-    } else if (Array.isArray(responseData?.result)) {
-        devices = responseData.result;
-    } else if (Array.isArray(responseData?.devices)) {
-        devices = responseData.devices;
+        return responseData;
     }
 
-    return devices
+    if (
+        Array.isArray(responseData?.data) &&
+        Array.isArray(responseData.data[0])
+    ) {
+        return responseData.data[0];
+    }
+
+    if (Array.isArray(responseData?.data)) {
+        return responseData.data;
+    }
+
+    if (Array.isArray(responseData?.data?.data)) {
+        return responseData.data.data;
+    }
+
+    if (Array.isArray(responseData?.result)) {
+        return responseData.result;
+    }
+
+    if (Array.isArray(responseData?.devices)) {
+        return responseData.devices;
+    }
+
+    return [];
+}
+
+function normalizeDevicesResponse(responseData) {
+    return getRows(responseData)
         .filter((device) => device && device.device_ID !== undefined)
         .map((device) => ({
             device_ID: Number(device.device_ID),
@@ -83,6 +179,61 @@ function normalizeDevicesResponse(responseData) {
             firmware_version: device.firmware_version ?? null,
             connection_status: device.connection_status ?? null,
         }));
+}
+
+function normalizeBleDevicesResponse(responseData) {
+    return getRows(responseData)
+        .filter((device) => device && device.device_ID !== undefined)
+        .map((device) => ({
+            device_ID: Number(device.device_ID),
+            device_name:
+                device.device_name ||
+                device.name ||
+                `Device ${device.device_ID}`,
+            data_transport: "ble",
+            last_seen: device.last_seen ?? null,
+            battery_percent: device.battery_percent ?? null,
+            firmware_version: device.firmware_version ?? null,
+            connection_status: device.connection_status ?? null,
+        }));
+}
+
+function mergeDevices(...deviceLists) {
+    const map = new Map();
+
+    deviceLists.flat().forEach((device) => {
+        if (!device || !Number.isFinite(Number(device.device_ID))) return;
+
+        const key = String(device.device_ID);
+        const existing = map.get(key) || {};
+
+        map.set(key, {
+            ...existing,
+            ...device,
+            device_ID: Number(device.device_ID),
+            device_name:
+                device.device_name ||
+                existing.device_name ||
+                `Device ${device.device_ID}`,
+            data_transport:
+                device.data_transport || existing.data_transport || "cellular",
+            last_seen: device.last_seen ?? existing.last_seen ?? null,
+            battery_percent:
+                device.battery_percent ?? existing.battery_percent ?? null,
+            firmware_version:
+                device.firmware_version ?? existing.firmware_version ?? null,
+            connection_status:
+                device.connection_status ?? existing.connection_status ?? null,
+        });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+        if (a.data_transport !== b.data_transport) {
+            return a.data_transport.localeCompare(b.data_transport);
+        }
+
+        return Number(a.device_ID) - Number(b.device_ID);
+    });
 }
 
 function getDeviceGroups(devices) {
@@ -128,7 +279,7 @@ function getAlertTitle(alert) {
 
 function getAlertDistanceText(alert) {
     const toStatus = getAlertToStatus(alert);
-    const distance = alert.device_area_distance_m;
+    const distance = alert.device_area_distance_m ?? alert.status_value;
 
     if (distance === null || distance === undefined) {
         return "Avstånd saknas";
@@ -217,16 +368,41 @@ export default function Navbar() {
         try {
             setDevicesLoaded(false);
 
-            const response = await axios.get(
-                `/api/device/status/get/all/${userId}`,
-            );
+            const [statusDevicesResult, bleDevicesResult] =
+                await Promise.allSettled([
+                    axios.get(`/api/device/status/get/all/${userId}`),
+                    axios.get(`/api/device/ble/get/all/${userId}`),
+                ]);
 
-            console.log("Navbar devices response:", response.data);
+            if (
+                statusDevicesResult.status === "rejected" &&
+                bleDevicesResult.status === "rejected"
+            ) {
+                console.error(
+                    "Failed to fetch navbar status devices:",
+                    statusDevicesResult.reason,
+                );
+                console.error(
+                    "Failed to fetch navbar BLE devices:",
+                    bleDevicesResult.reason,
+                );
 
-            const devices = normalizeDevicesResponse(response.data);
+                setUserDevices([]);
+                return;
+            }
+
+            const statusDevices =
+                statusDevicesResult.status === "fulfilled"
+                    ? normalizeDevicesResponse(statusDevicesResult.value.data)
+                    : [];
+
+            const bleDevices =
+                bleDevicesResult.status === "fulfilled"
+                    ? normalizeBleDevicesResponse(bleDevicesResult.value.data)
+                    : [];
+
+            const devices = mergeDevices(statusDevices, bleDevices);
             const groups = getDeviceGroups(devices);
-
-            console.log("Navbar normalized devices:", devices);
 
             setUserDevices(devices);
 
@@ -311,97 +487,130 @@ export default function Navbar() {
         }
     }
 
-    const navLinks = useMemo(() => {
-        const links = [
+    const navSections = useMemo(() => {
+        const sections = [
             {
-                to: "/landing-page",
-                activePaths: ["/", "/landing-page"],
-                label: "Landing Page",
-                icon: Box,
-                show: true,
+                title: "Main",
+                items: [
+                    {
+                        to: "/landing-page",
+                        activePaths: ["/", "/landing-page"],
+                        label: "Landing Page",
+                        icon: Box,
+                        show: true,
+                    },
+                    {
+                        to: "/dashboard",
+                        activePaths: ["/dashboard"],
+                        label: "Dashboard",
+                        icon: MapPinHouse,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
+                ],
             },
             {
-                to: "/dashboard",
-                activePaths: ["/dashboard"],
-                label: "Dashboard",
-                icon: MapPinHouse,
-                show: selectedIsCellular && deviceGroups.hasCellular,
+                title: "Devices",
+                items: [
+                    {
+                        to: "/register-device",
+                        activePaths: ["/register-device"],
+                        label: "Add Device",
+                        icon: CirclePlus,
+                        show: true,
+                    },
+                    {
+                        to: "/device-events",
+                        activePaths: ["/device-events"],
+                        activePathPrefixes: ["/devices/"],
+                        label: "Device Events",
+                        icon: TerminalSquare,
+                        show: deviceGroups.totalCount > 0,
+                    },
+                ],
             },
             {
-                to: "/register-device",
-                activePaths: ["/register-device"],
-                label: "Add Device",
-                icon: CirclePlus,
-                show: true,
+                title: "Cellular",
+                items: [
+                    {
+                        to: "/work-areas",
+                        activePaths: ["/work-areas"],
+                        label: "Work Areas",
+                        icon: MapPinned,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
+                    {
+                        to: "/geofence",
+                        activePaths: ["/geofence"],
+                        label: "Geofence",
+                        icon: Radar,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
+                    {
+                        to: "/mock-cellular-route",
+                        activePaths: ["/mock-cellular-route"],
+                        label: "Mock Cellular Route",
+                        icon: RouteIcon,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
+                ],
             },
             {
-                to: "/account",
-                activePaths: ["/account"],
-                label: "Account",
-                icon: UserCircle2,
-                show: true,
+                title: "BLE",
+                items: [
+                    {
+                        to: "/motion-live",
+                        activePaths: ["/motion-live"],
+                        label: "Session Live Motion",
+                        icon: Radio,
+                        show: selectedIsBle && deviceGroups.hasBle,
+                    },
+                    {
+                        to: "/mock-motion-session",
+                        activePaths: ["/mock-motion-session"],
+                        label: "Mock BLE Session",
+                        icon: Activity,
+                        show: selectedIsBle && deviceGroups.hasBle,
+                    },
+                ],
             },
             {
-                to: "/device-events",
-                activePaths: ["/device-events"],
-                label: "Device Events",
-                icon: TerminalSquare,
-                show: deviceGroups.totalCount > 0,
-            },
-            {
-                to: "/work-areas",
-                activePaths: ["/work-areas"],
-                label: "Work Areas",
-                icon: MapPinned,
-                show: selectedIsCellular && deviceGroups.hasCellular,
-            },
-            {
-                to: "/geofence",
-                activePaths: ["/geofence"],
-                label: "Geofence",
-                icon: Radar,
-                show: selectedIsCellular && deviceGroups.hasCellular,
-            },
-            {
-                to: "/motion-live",
-                activePaths: ["/motion-live"],
-                label: "Session Live Motion",
-                icon: Radio,
-                show: selectedIsBle && deviceGroups.hasBle,
-            },
-            {
-                to: "/mock-cellular-route",
-                activePaths: ["/mock-cellular-route"],
-                label: "Mock Cellular Route",
-                icon: RouteIcon,
-                show: selectedIsCellular && deviceGroups.hasCellular,
-            },
-            {
-                to: "/mock-motion-session",
-                activePaths: ["/mock-motion-session"],
-                label: "Mock BLE Session",
-                icon: Activity,
-                show: selectedIsBle && deviceGroups.hasBle,
+                title: "System",
+                items: [
+                    {
+                        to: "/account",
+                        activePaths: ["/account"],
+                        label: "Account",
+                        icon: UserCircle2,
+                        show: true,
+                    },
+                ],
             },
         ];
 
-        if (!devicesLoaded) {
-            return links.filter((item) =>
-                ["/landing-page", "/register-device", "/account"].includes(
-                    item.to,
-                ),
-            );
-        }
+        const allowedWithoutDevices = [
+            "/landing-page",
+            "/register-device",
+            "/account",
+        ];
 
-        if (!deviceGroups.totalCount) {
-            return links.filter((item) =>
-                ["/landing-page", "/register-device", "/account"].includes(
-                    item.to,
-                ),
-            );
-        }
+        return sections
+            .map((section) => {
+                let items = section.items;
 
-        return links.filter((item) => item.show);
+                if (!devicesLoaded || !deviceGroups.totalCount) {
+                    items = items.filter((item) =>
+                        allowedWithoutDevices.includes(item.to),
+                    );
+                } else {
+                    items = items.filter((item) => item.show);
+                }
+
+                return {
+                    ...section,
+                    items,
+                };
+            })
+            .filter((section) => section.items.length > 0);
     }, [
         devicesLoaded,
         selectedIsCellular,
@@ -414,18 +623,37 @@ export default function Navbar() {
     useEffect(() => {
         if (!devicesLoaded) return;
 
-        const currentPathIsAllowed = navLinks.some((item) => {
-            if (item.activePaths?.includes(location.pathname)) {
-                return true;
-            }
+        const pathname = location.pathname;
 
-            return item.to === location.pathname;
-        });
-
-        if (currentPathIsAllowed) return;
+        if (isAllowedProtectedPath(pathname, deviceGroups)) {
+            return;
+        }
 
         if (!deviceGroups.totalCount) {
             navigate("/register-device", { replace: true });
+            return;
+        }
+
+        if (isCellularOnlyPath(pathname) && !deviceGroups.hasCellular) {
+            if (deviceGroups.hasBle) {
+                setSelectedTransport("ble");
+                localStorage.setItem(SELECTED_TRANSPORT_STORAGE_KEY, "ble");
+                navigate("/motion-live", { replace: true });
+            }
+
+            return;
+        }
+
+        if (isBleOnlyPath(pathname) && !deviceGroups.hasBle) {
+            if (deviceGroups.hasCellular) {
+                setSelectedTransport("cellular");
+                localStorage.setItem(
+                    SELECTED_TRANSPORT_STORAGE_KEY,
+                    "cellular",
+                );
+                navigate("/dashboard", { replace: true });
+            }
+
             return;
         }
 
@@ -453,12 +681,9 @@ export default function Navbar() {
         }
     }, [
         devicesLoaded,
-        navLinks,
         location.pathname,
         selectedTransport,
-        deviceGroups.totalCount,
-        deviceGroups.hasCellular,
-        deviceGroups.hasBle,
+        deviceGroups,
         navigate,
     ]);
 
@@ -478,8 +703,6 @@ export default function Navbar() {
         }
 
         function handleGeofenceAlert(alert) {
-            console.log("Navbar geofence alert:", alert);
-
             setLiveAlerts((prevAlerts) => [alert, ...prevAlerts].slice(0, 10));
 
             if (!alertsOpen) {
@@ -561,6 +784,14 @@ export default function Navbar() {
             return true;
         }
 
+        if (
+            item.activePathPrefixes?.some((prefix) =>
+                location.pathname.startsWith(prefix),
+            )
+        ) {
+            return true;
+        }
+
         return location.pathname === item.to;
     }
 
@@ -600,26 +831,15 @@ export default function Navbar() {
                     />
                 </div>
 
-                <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                    {navLinks.map((item) => {
-                        const Icon = item.icon;
-                        const active = isActive(item);
-
-                        return (
-                            <Link
-                                key={item.to}
-                                to={item.to}
-                                className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition ${
-                                    active
-                                        ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
-                                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
-                                }`}
-                            >
-                                <Icon className="h-5 w-5 shrink-0" />
-                                <span className="truncate">{item.label}</span>
-                            </Link>
-                        );
-                    })}
+                <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+                    {navSections.map((section) => (
+                        <NavSection
+                            key={section.title}
+                            title={section.title}
+                            items={section.items}
+                            isActive={isActive}
+                        />
+                    ))}
                 </nav>
 
                 <div className="mt-4 shrink-0 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
@@ -627,7 +847,7 @@ export default function Navbar() {
                         <button
                             type="button"
                             onClick={toggleAlerts}
-                            className="relative flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                            className="relative flex h-11 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                         >
                             <Bell className="h-5 w-5 shrink-0" />
                             <span className="truncate">Alerts</span>
@@ -643,7 +863,7 @@ export default function Navbar() {
                     <button
                         type="button"
                         onClick={toggleTheme}
-                        className="flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                        className="flex h-11 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                     >
                         {theme === "dark" ? (
                             <>
@@ -661,7 +881,7 @@ export default function Navbar() {
                     <button
                         type="button"
                         onClick={handleLogout}
-                        className="flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-red-50 hover:text-red-700 dark:text-slate-200 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                        className="flex h-11 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-red-50 hover:text-red-700 dark:text-slate-200 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                     >
                         <LogOut className="h-5 w-5 shrink-0" />
                         <span className="truncate">Logga ut</span>
@@ -718,7 +938,7 @@ export default function Navbar() {
                     </div>
 
                     {mobileMenuOpen && (
-                        <div className="mt-4 max-h-[calc(100dvh-92px)] space-y-3 overflow-y-auto border-t border-slate-200 pt-4 dark:border-slate-800">
+                        <div className="mt-4 max-h-[calc(100dvh-92px)] space-y-4 overflow-y-auto border-t border-slate-200 pt-4 dark:border-slate-800">
                             <TransportSelector
                                 selectedTransport={selectedTransport}
                                 isOpen={transportSelectorOpen}
@@ -728,31 +948,19 @@ export default function Navbar() {
                                 devicesLoaded={devicesLoaded}
                             />
 
-                            <div className="grid gap-3">
-                                {navLinks.map((item) => {
-                                    const Icon = item.icon;
-                                    const active = isActive(item);
-
-                                    return (
-                                        <Link
-                                            key={item.to}
-                                            to={item.to}
-                                            onClick={() =>
-                                                setMobileMenuOpen(false)
-                                            }
-                                            className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-base font-semibold transition ${
-                                                active
-                                                    ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
-                                                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                                            }`}
-                                        >
-                                            <Icon className="h-5 w-5 shrink-0" />
-                                            <span className="truncate">
-                                                {item.label}
-                                            </span>
-                                        </Link>
-                                    );
-                                })}
+                            <div className="space-y-5">
+                                {navSections.map((section) => (
+                                    <NavSection
+                                        key={section.title}
+                                        title={section.title}
+                                        items={section.items}
+                                        isActive={isActive}
+                                        onNavigate={() =>
+                                            setMobileMenuOpen(false)
+                                        }
+                                        mobile
+                                    />
+                                ))}
                             </div>
 
                             <div className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
@@ -940,6 +1148,43 @@ export default function Navbar() {
                 </>
             )}
         </>
+    );
+}
+
+function NavSection({ title, items, isActive, onNavigate, mobile = false }) {
+    return (
+        <div className="space-y-2">
+            <p className="px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                {title}
+            </p>
+
+            <div className={mobile ? "grid gap-2" : "space-y-1"}>
+                {items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item);
+
+                    return (
+                        <Link
+                            key={item.to}
+                            to={item.to}
+                            onClick={onNavigate}
+                            className={`flex items-center gap-3 rounded-2xl px-4 font-semibold transition ${
+                                mobile ? "h-12 text-base" : "h-10 text-sm"
+                            } ${
+                                active
+                                    ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
+                                    : mobile
+                                      ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                            }`}
+                        >
+                            <Icon className="h-5 w-5 shrink-0" />
+                            <span className="truncate">{item.label}</span>
+                        </Link>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
 

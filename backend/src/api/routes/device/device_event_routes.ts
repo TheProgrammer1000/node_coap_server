@@ -14,7 +14,10 @@ import {
     get_all_devices_from_userID,
     get_user_device_with_status,
     get_device_event,
+    add_device_event,
 } from "../../../db/db.js";
+
+import { device_event_type } from "../../../types.js";
 
 const router = Router();
 
@@ -40,6 +43,29 @@ router.get("/get/:user_ID", async (req, res) => {
             success: false,
             error: "Failed to get device_ID",
         });
+    }
+});
+
+router.post("/add", async (req, res) => {
+    const device_event_data: device_event_type = req.body;
+
+    console.log("device_event_data: ", device_event_data);
+
+    try {
+        const db_response = await add_device_event(
+            device_event_data.device_ID,
+            device_event_data.event_type,
+            device_event_data.severity,
+            device_event_data.message,
+            device_event_data.data_transport,
+            device_event_data.firmware_version,
+        );
+
+        console.log(db_response);
+
+        res.status(201).json({ success: true, msg: db_response });
+    } catch (error) {
+        res.status(500).json({ success: false, msg: { error } });
     }
 });
 

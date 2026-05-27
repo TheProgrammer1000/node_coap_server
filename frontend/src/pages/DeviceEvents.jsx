@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
     AlertCircle,
@@ -7,6 +8,7 @@ import {
     CalendarClock,
     Cpu,
     Database,
+    Eye,
     Info,
     Loader2,
     Radio,
@@ -22,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100];
+const SELECTED_TRANSPORT_STORAGE_KEY = "selected_data_transport";
 
 function getStoredUser() {
     try {
@@ -40,38 +43,7 @@ function normalizeTransport(value) {
     return "cellular";
 }
 
-function normalizeDevicesResponse(result) {
-    let rows = [];
-
-    if (Array.isArray(result)) {
-        rows = result;
-    } else if (Array.isArray(result?.data) && Array.isArray(result.data[0])) {
-        rows = result.data[0];
-    } else if (Array.isArray(result?.data)) {
-        rows = result.data;
-    } else if (Array.isArray(result?.devices)) {
-        rows = result.devices;
-    } else if (Array.isArray(result?.result)) {
-        rows = result.result;
-    }
-
-    return rows
-        .filter((device) => device && device.device_ID !== undefined)
-        .map((device) => ({
-            device_ID: Number(device.device_ID),
-            device_name:
-                device.device_name ||
-                device.name ||
-                `Device ${device.device_ID}`,
-            data_transport: normalizeTransport(device.data_transport),
-            battery_percent: device.battery_percent ?? null,
-            firmware_version: device.firmware_version ?? null,
-            last_seen: device.last_seen ?? null,
-            connection_status: device.connection_status ?? null,
-        }));
-}
-
-function normalizeEventsResponse(result) {
+function normalizeRows(result) {
     const data = result?.data;
 
     if (Array.isArray(data) && Array.isArray(data[0])) {
@@ -87,6 +59,94 @@ function normalizeEventsResponse(result) {
     }
 
     return [];
+}
+
+function normalizeDevicesResponse(result) {
+    return normalizeRows(result)
+        .filter((device) => {
+            const deviceId = Number(device?.device_ID);
+            return Number.isFinite(deviceId);
+        })
+        .map((device) => {
+            const deviceId = Number(device.device_ID);
+
+            return {
+                device_ID: deviceId,
+                device_name:
+                    device.device_name || device.name || `Device ${deviceId}`,
+                data_transport: normalizeTransport(device.data_transport),
+                battery_percent: device.battery_percent ?? null,
+                firmware_version: device.firmware_version ?? null,
+                last_seen: device.last_seen ?? device.lastSeen ?? null,
+                connection_status:
+                    device.connection_status ?? device.status ?? null,
+            };
+        });
+}
+
+function normalizeBleDevicesResponse(result) {
+    return normalizeRows(result)
+        .filter((device) => {
+            const deviceId = Number(device?.device_ID);
+            return Number.isFinite(deviceId);
+        })
+        .map((device) => {
+            const deviceId = Number(device.device_ID);
+
+            return {
+                device_ID: deviceId,
+                device_name:
+                    device.device_name || device.name || `Device ${deviceId}`,
+                data_transport: "ble",
+                battery_percent: device.battery_percent ?? null,
+                firmware_version: device.firmware_version ?? null,
+                last_seen: device.last_seen ?? device.lastSeen ?? null,
+                connection_status:
+                    device.connection_status ?? device.status ?? null,
+            };
+        });
+}
+
+function mergeDevices(...deviceLists) {
+    const map = new Map();
+
+    deviceLists.flat().forEach((device) => {
+        if (!Number.isFinite(Number(device?.device_ID))) return;
+
+        const key = String(device.device_ID);
+        const existing = map.get(key) || {};
+
+        map.set(key, {
+            ...existing,
+            ...device,
+            device_ID: Number(device.device_ID),
+            device_name:
+                device.device_name ||
+                existing.device_name ||
+                `Device ${device.device_ID}`,
+            data_transport:
+                device.data_transport || existing.data_transport || "cellular",
+            battery_percent:
+                device.battery_percent ?? existing.battery_percent ?? null,
+            firmware_version:
+                device.firmware_version ?? existing.firmware_version ?? null,
+            last_seen: device.last_seen ?? existing.last_seen ?? null,
+            connection_status:
+                device.connection_status ?? existing.connection_status ?? null,
+        });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+        if (a.data_transport !== b.data_transport) {
+            return a.data_transport.localeCompare(b.data_transport);
+        }
+
+        return Number(a.device_ID) - Number(b.device_ID);
+    });
+}
+
+function normalizeEventsResponse(result) {
+    return normalizeRows(result);
 }
 
 function formatDate(value) {
@@ -191,12 +251,31 @@ function attachEventsToDevices(devices, events) {
     });
 }
 
+function getInitialTransport() {
+    const storedTransport = localStorage.getItem(
+        SELECTED_TRANSPORT_STORAGE_KEY,
+    );
+
+    if (storedTransport === "ble" || storedTransport === "cellular") {
+        return storedTransport;
+    }
+
+    return "cellular";
+}
+
+function getDeviceDetailsPath(device) {
+    return `/devices/${Number(device.device_ID)}`;
+}
+
 export default function DeviceEvents() {
+    const navigate = useNavigate();
+
     const user = getStoredUser();
     const userId = user?.user_ID || null;
 
-    const [selectedTransport, setSelectedTransport] = useState("cellular");
-    const [limit, setLimit] = useState(10);
+    const [selectedTransport, setSelectedTransport] =
+        useState(getInitialTransport);
+    const [limit, setLimit] = useState(20);
 
     const [devices, setDevices] = useState([]);
     const [events, setEvents] = useState([]);
@@ -319,17 +398,29 @@ export default function DeviceEvents() {
             setErrorMessage("");
             setEventWarningMessage("");
 
-            const [devicesResult, eventsResult] = await Promise.allSettled([
-                axios.get(`/api/device/status/get/all/${userId}`),
-                axios.get(
-                    `/api/device/event/get/${userId}?data_transport=${encodeURIComponent(
-                        selectedTransport,
-                    )}&limit=${limit}`,
-                ),
-            ]);
+            const [statusDevicesResult, bleDevicesResult, eventsResult] =
+                await Promise.allSettled([
+                    axios.get(`/api/device/status/get/all/${userId}`),
+                    axios.get(`/api/device/ble/get/all/${userId}`),
+                    axios.get(
+                        `/api/device/event/get/${userId}?data_transport=${encodeURIComponent(
+                            selectedTransport,
+                        )}&limit=${limit}`,
+                    ),
+                ]);
 
-            if (devicesResult.status === "rejected") {
-                console.error("Failed to fetch devices:", devicesResult.reason);
+            if (
+                statusDevicesResult.status === "rejected" &&
+                bleDevicesResult.status === "rejected"
+            ) {
+                console.error(
+                    "Failed to fetch status devices:",
+                    statusDevicesResult.reason,
+                );
+                console.error(
+                    "Failed to fetch BLE devices:",
+                    bleDevicesResult.reason,
+                );
 
                 setDevices([]);
                 setEvents([]);
@@ -338,17 +429,26 @@ export default function DeviceEvents() {
                 return;
             }
 
-            const normalizedDevices = normalizeDevicesResponse(
-                devicesResult.value.data,
-            );
+            const statusDevices =
+                statusDevicesResult.status === "fulfilled"
+                    ? normalizeDevicesResponse(statusDevicesResult.value.data)
+                    : [];
+
+            const bleDevices =
+                bleDevicesResult.status === "fulfilled"
+                    ? normalizeBleDevicesResponse(bleDevicesResult.value.data)
+                    : [];
+
+            const normalizedDevices = mergeDevices(statusDevices, bleDevices);
 
             const normalizedEvents =
                 eventsResult.status === "fulfilled" &&
                 eventsResult.value.data?.success !== false
                     ? normalizeEventsResponse(eventsResult.value.data)
-                          .filter(
-                              (event) => event && event.device_ID !== undefined,
-                          )
+                          .filter((event) => {
+                              const deviceId = Number(event?.device_ID);
+                              return Number.isFinite(deviceId);
+                          })
                           .map((event) => ({
                               ...event,
                               id: Number(event.id),
@@ -426,9 +526,21 @@ export default function DeviceEvents() {
     }, [devicesWithEvents, selectedDeviceId]);
 
     function handleSelectTransport(transport) {
-        setSelectedTransport(normalizeTransport(transport));
+        const nextTransport = normalizeTransport(transport);
+
+        setSelectedTransport(nextTransport);
         setSelectedDeviceId(null);
         setSearchQuery("");
+
+        localStorage.setItem(SELECTED_TRANSPORT_STORAGE_KEY, nextTransport);
+    }
+
+    function openDeviceDetails(device) {
+        const path = getDeviceDetailsPath(device);
+
+        console.log("Opening device details:", path);
+
+        navigate(path);
     }
 
     return (
@@ -562,7 +674,8 @@ export default function DeviceEvents() {
                         </CardTitle>
 
                         <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                            Välj en device för att se dess eventlogg.
+                            Välj en device för att se dess eventlogg eller öppna
+                            device detail-sidan.
                         </p>
                     </CardHeader>
 
@@ -594,10 +707,13 @@ export default function DeviceEvents() {
                                             String(device.device_ID) ===
                                             String(selectedDevice?.device_ID)
                                         }
-                                        onClick={() =>
+                                        onSelect={() =>
                                             setSelectedDeviceId(
                                                 device.device_ID,
                                             )
+                                        }
+                                        onOpenDetails={() =>
+                                            openDeviceDetails(device)
                                         }
                                     />
                                 ))}
@@ -640,7 +756,12 @@ export default function DeviceEvents() {
                                 selectedTransport={selectedTransport}
                             />
                         ) : selectedDeviceEvents.length === 0 ? (
-                            <NoEventsForDevice device={selectedDevice} />
+                            <NoEventsForDevice
+                                device={selectedDevice}
+                                onOpenDetails={() =>
+                                    openDeviceDetails(selectedDevice)
+                                }
+                            />
                         ) : (
                             <div className="space-y-3 xl:max-h-[calc(100dvh-370px)] xl:min-h-[360px] xl:overflow-y-auto xl:pr-1">
                                 {selectedDeviceEvents.map((event, index) => (
@@ -686,92 +807,109 @@ function StatCard({ icon: Icon, label, value, text }) {
     );
 }
 
-function DeviceEventCard({ device, isSelected, onClick }) {
+function DeviceEventCard({ device, isSelected, onSelect, onOpenDetails }) {
     const TransportIcon = getTransportIcon(device.data_transport);
     const latestEvent = device.latest_event;
     const hasEvents = device.events.length > 0;
 
     return (
-        <button
-            type="button"
-            onClick={onClick}
+        <article
             className={`w-full rounded-3xl border p-4 text-left transition ${
                 isSelected
                     ? "border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/20"
                     : "border-slate-200 bg-slate-50 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
             }`}
         >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                <div
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white ${
-                        device.data_transport === "ble"
-                            ? "bg-violet-600"
-                            : "bg-blue-600"
-                    }`}
-                >
-                    <TransportIcon className="h-5 w-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                            <p className="break-words font-black text-slate-950 dark:text-white">
-                                {device.device_name}
-                            </p>
-
-                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                ID {device.device_ID} ·{" "}
-                                {getTransportLabel(device.data_transport)}
-                            </p>
-                        </div>
-
-                        <span
-                            className={`w-fit shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${
-                                hasEvents
-                                    ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
-                                    : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            }`}
-                        >
-                            {device.events.length} events
-                        </span>
+            <button
+                type="button"
+                onClick={onSelect}
+                className="block w-full text-left"
+            >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <div
+                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white ${
+                            device.data_transport === "ble"
+                                ? "bg-violet-600"
+                                : "bg-blue-600"
+                        }`}
+                    >
+                        <TransportIcon className="h-5 w-5" />
                     </div>
 
-                    {latestEvent ? (
-                        <div className="mt-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <p className="break-words text-sm font-bold text-slate-950 dark:text-white">
-                                    {latestEvent.event_type}
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="break-words font-black text-slate-950 dark:text-white">
+                                    {device.device_name}
                                 </p>
 
-                                <SeverityBadge
-                                    severity={latestEvent.severity}
-                                />
+                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                    ID {device.device_ID} ·{" "}
+                                    {getTransportLabel(device.data_transport)}
+                                </p>
                             </div>
 
-                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                {latestEvent.message}
-                            </p>
-
-                            <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                {formatAge(latestEvent.created_at)}
-                            </p>
+                            <span
+                                className={`w-fit shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${
+                                    hasEvents
+                                        ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                                        : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                }`}
+                            >
+                                {device.events.length} events
+                            </span>
                         </div>
-                    ) : (
-                        <div className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                            <p className="text-sm font-black text-slate-700 dark:text-slate-200">
-                                Inga events ännu
-                            </p>
 
-                            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                Devicen finns registrerad men har inte loggat
-                                några events för{" "}
-                                {getTransportLabel(device.data_transport)} ännu.
-                            </p>
-                        </div>
-                    )}
+                        {latestEvent ? (
+                            <div className="mt-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="break-words text-sm font-bold text-slate-950 dark:text-white">
+                                        {latestEvent.event_type}
+                                    </p>
+
+                                    <SeverityBadge
+                                        severity={latestEvent.severity}
+                                    />
+                                </div>
+
+                                <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    {latestEvent.message}
+                                </p>
+
+                                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                    {formatAge(latestEvent.created_at)}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                                <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+                                    Inga events ännu
+                                </p>
+
+                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Devicen finns registrerad men har inte
+                                    loggat några events för{" "}
+                                    {getTransportLabel(device.data_transport)}{" "}
+                                    ännu.
+                                </p>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
-        </button>
+            </button>
+
+            <button
+                type="button"
+                onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenDetails();
+                }}
+                className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-300 bg-white text-sm font-black text-slate-950 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+            >
+                <Eye className="mr-2 h-4 w-4" />
+                Visa device details
+            </button>
+        </article>
     );
 }
 
@@ -818,7 +956,9 @@ function MiniInfo({ label, value }) {
             </p>
 
             <p className="mt-1 break-words text-sm font-black text-slate-950 dark:text-white">
-                {value || "N/A"}
+                {value === null || value === undefined || value === ""
+                    ? "N/A"
+                    : value}
             </p>
         </div>
     );
@@ -863,7 +1003,7 @@ function LoadingState() {
             {[1, 2, 3].map((item) => (
                 <div
                     key={item}
-                    className="h-32 animate-pulse rounded-3xl bg-slate-100 dark:bg-slate-800"
+                    className="h-36 animate-pulse rounded-3xl bg-slate-100 dark:bg-slate-800"
                 />
             ))}
         </div>
@@ -902,7 +1042,7 @@ function NoDeviceForTransport({ selectedTransport }) {
     );
 }
 
-function NoEventsForDevice({ device }) {
+function NoEventsForDevice({ device, onOpenDetails }) {
     const TransportIcon = getTransportIcon(device.data_transport);
 
     return (
@@ -936,6 +1076,15 @@ function NoEventsForDevice({ device }) {
                     några tekniska events. När devicen skickar event till
                     backend kommer de visas här.
                 </p>
+
+                <button
+                    type="button"
+                    onClick={onOpenDetails}
+                    className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-300 bg-white text-sm font-black text-slate-950 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+                >
+                    <Eye className="mr-2 h-4 w-4" />
+                    Visa device details
+                </button>
             </div>
         </div>
     );

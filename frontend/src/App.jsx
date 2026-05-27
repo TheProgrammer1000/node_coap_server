@@ -1,78 +1,68 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
-import ThemeSync from "./components/ThemeSync";
 import AppLayout from "./components/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import OAuthCallback from "./pages/OAuthCallback";
-import Account from "./pages/Account";
-import DeviceEvents from "./pages/DeviceEvents";
+
+import Company from "./pages/Company";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import RegisterDevice from "./pages/RegisterDevice";
-import AddLocation from "./pages/WorkAreas";
+import WorkAreas from "./pages/WorkAreas";
 import GeofenceDashboard from "./pages/GeofenceDashboard";
-import MotionLive from "./pages/MotionLive";
-import Devices from "./pages/Devices";
-import MockBleMotionSession from "./pages/MockBleMotionSession";
 import MockCellular from "./pages/MockCellular";
+import MotionLive from "./pages/MotionLive";
+import MockMotionSession from "./pages/MockBleMotionSession";
+import Account from "./pages/Account";
+import DeviceEvents from "./pages/DeviceEvents";
+import DeviceDetails from "./pages/DeviceDetails";
 
 export default function App() {
     return (
-        <>
-            <ThemeSync />
+        <Routes>
+            {/* Public company pages */}
+            <Route path="/" element={<Company />} />
+            <Route path="/company" element={<Company />} />
 
-            <Routes>
+            {/* Public auth pages */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
+
+            {/* Protected platform pages */}
+            <Route
+                element={
+                    <ProtectedRoute>
+                        <AppLayout />
+                    </ProtectedRoute>
+                }
+            >
+                <Route path="/landing-page" element={<LandingPage />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/register-device" element={<RegisterDevice />} />
+                <Route path="/account" element={<Account />} />
+
+                <Route path="/work-areas" element={<WorkAreas />} />
+                <Route path="/geofence" element={<GeofenceDashboard />} />
+                <Route path="/mock-cellular-route" element={<MockCellular />} />
+
+                <Route path="/motion-live" element={<MotionLive />} />
                 <Route
-                    path="/"
-                    element={<Navigate to="/landing-page" replace />}
+                    path="/mock-motion-session"
+                    element={<MockMotionSession />}
                 />
 
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
+                <Route path="/device-events" element={<DeviceEvents />} />
 
-                {/* Google OAuth callback måste vara utanför ProtectedRoute */}
-                <Route path="/oauth/callback" element={<OAuthCallback />} />
+                {/* DeviceDetails läser params.device_ID */}
+                <Route path="/devices/:device_ID" element={<DeviceDetails />} />
+            </Route>
 
-                <Route
-                    element={
-                        <ProtectedRoute>
-                            <AppLayout />
-                        </ProtectedRoute>
-                    }
-                >
-                    <Route
-                        path="/mock-motion-session"
-                        element={<MockBleMotionSession />}
-                    />
-
-                    <Route path="/landing-page" element={<LandingPage />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-
-                    <Route
-                        path="/register-device"
-                        element={<RegisterDevice />}
-                    />
-
-                    <Route path="/work-areas" element={<AddLocation />} />
-                    <Route path="/geofence" element={<GeofenceDashboard />} />
-                    <Route path="/account" element={<Account />} />
-                    <Route path="/device-events" element={<DeviceEvents />} />
-                    <Route path="/motion-live" element={<MotionLive />} />
-                    <Route path="/devices" element={<Devices />} />
-                    <Route
-                        path="/mock-cellular-route"
-                        element={<MockCellular />}
-                    />
-                </Route>
-
-                <Route
-                    path="*"
-                    element={<Navigate to="/landing-page" replace />}
-                />
-            </Routes>
-        </>
+            {/* Unknown pages */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
     );
 }
