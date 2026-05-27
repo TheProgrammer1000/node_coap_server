@@ -7,7 +7,6 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import OAuthCallback from "./pages/OAuthCallback";
 
-import Company from "./pages/Company";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import RegisterDevice from "./pages/RegisterDevice";
@@ -23,11 +22,6 @@ import DeviceDetails from "./pages/DeviceDetails";
 export default function App() {
     return (
         <Routes>
-            {/* Public company pages */}
-            <Route path="/" element={<Company />} />
-            <Route path="/company" element={<Company />} />
-
-            {/* Public auth pages */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/oauth/callback" element={<OAuthCallback />} />
@@ -61,6 +55,7 @@ export default function App() {
                 <Route path="/devices/:device_ID" element={<DeviceDetails />} />
             </Route>
 
+            <Route path="/" element={<Navigate to="/login" replace />} />
             {/* Unknown pages */}
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
