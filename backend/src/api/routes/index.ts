@@ -12,6 +12,7 @@ import device_ble_routes from "./device/device_ble_routes.js";
 import device_mock_data_routes from "./device/device_mock_data_routes.js";
 import auth_routes from "./auth_routes.js";
 import device_status_routes from "./device/device_status_routes.js";
+import device_event_routes from "./device/device_event_routes.js";
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.use("/user", user_routes);
 
 router.use("/device", device_routes);
 router.use("/device/status", device_status_routes);
+router.use("/device/event", device_event_routes);
 router.use("/device/ble", device_ble_routes);
 router.use("/device/gnss", device_gnss_routes);
 router.use("/device/area-location", device_area_location_routes);

@@ -13,8 +13,10 @@ import {
     get_userID_by_deviceID,
     add_device_state,
     add_device_alert,
+    add_device_event,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
+import { device_event_type } from "../types.js";
 
 export function startCoapServer() {
     const server = createServer((req, res) => {
@@ -415,6 +417,47 @@ export function startCoapServer() {
                     return res.end(`Server error ${err}`);
                 }
             });
+
+            return;
+        } else if (req.url === "/device/event" && req.method === "POST") {
+            let body = "";
+
+            req.on("data", (chunk) => {
+                body += chunk.toString();
+            });
+
+            req.on("end", async () => {
+                try {
+                    res.setOption("Content-Format", "text/plain");
+
+                    if (!body) {
+                        res.code = "4.00";
+                        return res.end("Missing request body");
+                    }
+
+                    const sensorData: device_event_type = JSON.parse(body);
+                    console.log("sensorData: ", sensorData);
+
+                    const db_response = await add_device_event(
+                        sensorData.device_ID,
+                        sensorData.event_type,
+                        sensorData.severity,
+                        sensorData.message,
+                        sensorData.data_transport,
+                        sensorData.firmware_version,
+                    );
+
+                    console.log(db_response);
+
+                    res.code = "2.01";
+                    return res.end(`Successfully added device event!`);
+                } catch (err) {
+                    res.code = "5.00";
+                    return res.end(`Server error ${err}`);
+                }
+            });
+
+            return;
         }
     });
 

@@ -7,7 +7,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import OAuthCallback from "./pages/OAuthCallback";
-
+import Account from "./pages/Account";
+import DeviceEvents from "./pages/DeviceEvents";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import RegisterDevice from "./pages/RegisterDevice";
@@ -57,6 +58,8 @@ export default function App() {
 
                     <Route path="/work-areas" element={<AddLocation />} />
                     <Route path="/geofence" element={<GeofenceDashboard />} />
+                    <Route path="/account" element={<Account />} />
+                    <Route path="/device-events" element={<DeviceEvents />} />
                     <Route path="/motion-live" element={<MotionLive />} />
                     <Route path="/devices" element={<Devices />} />
                     <Route

@@ -20,6 +20,8 @@ import {
     Sun,
     X,
     MapPinHouse,
+    UserCircle2,
+    TerminalSquare,
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
@@ -333,6 +335,20 @@ export default function Navbar() {
                 show: true,
             },
             {
+                to: "/account",
+                activePaths: ["/account"],
+                label: "Account",
+                icon: UserCircle2,
+                show: true,
+            },
+            {
+                to: "/device-events",
+                activePaths: ["/device-events"],
+                label: "Device Events",
+                icon: TerminalSquare,
+                show: deviceGroups.totalCount > 0,
+            },
+            {
                 to: "/work-areas",
                 activePaths: ["/work-areas"],
                 label: "Work Areas",
@@ -371,13 +387,17 @@ export default function Navbar() {
 
         if (!devicesLoaded) {
             return links.filter((item) =>
-                ["/landing-page", "/register-device"].includes(item.to),
+                ["/landing-page", "/register-device", "/account"].includes(
+                    item.to,
+                ),
             );
         }
 
         if (!deviceGroups.totalCount) {
             return links.filter((item) =>
-                ["/landing-page", "/register-device"].includes(item.to),
+                ["/landing-page", "/register-device", "/account"].includes(
+                    item.to,
+                ),
             );
         }
 
@@ -546,10 +566,10 @@ export default function Navbar() {
 
     return (
         <>
-            <aside className="fixed left-0 top-0 z-50 hidden h-dvh w-72 flex-col border-r border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:flex">
+            <aside className="fixed left-0 top-0 z-50 hidden h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:flex">
                 <Link
                     to="/landing-page"
-                    className="mb-4 flex items-center gap-3 rounded-3xl px-2 py-2 transition hover:bg-slate-100 dark:hover:bg-slate-900"
+                    className="mb-4 flex shrink-0 items-center gap-3 rounded-3xl px-2 py-2 transition hover:bg-slate-100 dark:hover:bg-slate-900"
                 >
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-900">
                         <img
@@ -569,7 +589,7 @@ export default function Navbar() {
                     </div>
                 </Link>
 
-                <div className="mb-5">
+                <div className="mb-4 shrink-0">
                     <TransportSelector
                         selectedTransport={selectedTransport}
                         isOpen={transportSelectorOpen}
@@ -580,7 +600,7 @@ export default function Navbar() {
                     />
                 </div>
 
-                <nav className="space-y-2">
+                <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                     {navLinks.map((item) => {
                         const Icon = item.icon;
                         const active = isActive(item);
@@ -595,22 +615,23 @@ export default function Navbar() {
                                         : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                                 }`}
                             >
-                                <Icon className="h-5 w-5" />
-                                {item.label}
+                                <Icon className="h-5 w-5 shrink-0" />
+                                <span className="truncate">{item.label}</span>
                             </Link>
                         );
                     })}
                 </nav>
 
-                <div className="mt-auto space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <div className="mt-4 shrink-0 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                     {selectedIsCellular && deviceGroups.hasCellular && (
                         <button
                             type="button"
                             onClick={toggleAlerts}
                             className="relative flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                         >
-                            <Bell className="h-5 w-5" />
-                            Alerts
+                            <Bell className="h-5 w-5 shrink-0" />
+                            <span className="truncate">Alerts</span>
+
                             {unreadAlertCount > 0 && (
                                 <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold text-white shadow">
                                     {unreadAlertCount}
@@ -626,13 +647,13 @@ export default function Navbar() {
                     >
                         {theme === "dark" ? (
                             <>
-                                <Sun className="h-5 w-5" />
-                                Light mode
+                                <Sun className="h-5 w-5 shrink-0" />
+                                <span className="truncate">Light mode</span>
                             </>
                         ) : (
                             <>
-                                <Moon className="h-5 w-5" />
-                                Dark mode
+                                <Moon className="h-5 w-5 shrink-0" />
+                                <span className="truncate">Dark mode</span>
                             </>
                         )}
                     </button>
@@ -642,8 +663,8 @@ export default function Navbar() {
                         onClick={handleLogout}
                         className="flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-red-50 hover:text-red-700 dark:text-slate-200 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                     >
-                        <LogOut className="h-5 w-5" />
-                        Logga ut
+                        <LogOut className="h-5 w-5 shrink-0" />
+                        <span className="truncate">Logga ut</span>
                     </button>
                 </div>
             </aside>
@@ -697,7 +718,7 @@ export default function Navbar() {
                     </div>
 
                     {mobileMenuOpen && (
-                        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+                        <div className="mt-4 max-h-[calc(100dvh-92px)] space-y-3 overflow-y-auto border-t border-slate-200 pt-4 dark:border-slate-800">
                             <TransportSelector
                                 selectedTransport={selectedTransport}
                                 isOpen={transportSelectorOpen}
@@ -725,14 +746,16 @@ export default function Navbar() {
                                                     : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                                             }`}
                                         >
-                                            <Icon className="h-5 w-5" />
-                                            {item.label}
+                                            <Icon className="h-5 w-5 shrink-0" />
+                                            <span className="truncate">
+                                                {item.label}
+                                            </span>
                                         </Link>
                                     );
                                 })}
                             </div>
 
-                            <div className="grid gap-3 pt-2">
+                            <div className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
                                 {selectedIsCellular &&
                                     deviceGroups.hasCellular && (
                                         <Button

@@ -34,3 +34,12 @@ export interface ble_motion_packet_type {
     data_packet: number;
     firmware_version: string;
 }
+
+export interface device_event_type {
+    device_ID: number;
+    event_type: string;
+    severity: string;
+    message: string;
+    data_transport: string;
+    firmware_version: string;
+}

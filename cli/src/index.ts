@@ -3,6 +3,12 @@
 import "dotenv/config";
 import { Command } from "commander";
 import axios from "axios";
+import {
+    saveSession,
+    requireSession,
+    clearSession,
+    getSessionPath,
+} from "./session.js";
 
 const program = new Command();
 
@@ -54,6 +60,19 @@ type DeviceAlertRow = {
     data_transport: "cellular" | "ble" | string;
 };
 
+type DeviceEventRow = {
+    device_ID: number;
+    device_name: string;
+    event_type: string;
+    severity: string;
+    message: string;
+    firmware_version: string;
+    created_at: string;
+};
+
+/*
+    Gör värden snygga i tabell.
+*/
 function formatCell(value: string | number | null | undefined, width: number) {
     const text = String(value ?? "N/A");
 
@@ -64,6 +83,9 @@ function formatCell(value: string | number | null | undefined, width: number) {
     return text.padEnd(width, " ");
 }
 
+/*
+    Formaterar datum till svensk stil.
+*/
 function formatDate(value: string | null | undefined) {
     if (!value) return "N/A";
 
@@ -82,6 +104,9 @@ function formatDate(value: string | null | undefined) {
     }).format(date);
 }
 
+/*
+    Skriver ut enkel tabell i terminalen.
+*/
 function printTable<T>(columns: TableColumn<T>[], rows: T[]) {
     const header = columns
         .map((column) => formatCell(column.label, column.width))
@@ -103,6 +128,9 @@ function printTable<T>(columns: TableColumn<T>[], rows: T[]) {
     });
 }
 
+/*
+    Hanterar Axios-fel på ett tydligt sätt.
+*/
 function handleAxiosError(error: unknown) {
     if (axios.isAxiosError(error)) {
         console.error("Request failed:", error.response?.data ?? error.message);
@@ -114,6 +142,9 @@ function handleAxiosError(error: unknown) {
     process.exitCode = 1;
 }
 
+/*
+    Parsear number-options från CLI.
+*/
 function parseRequiredNumber(value: string, label: string) {
     const parsed = Number(value);
 
@@ -139,15 +170,33 @@ function isSuccessResponse(data: unknown) {
 }
 
 function getMessage(data: unknown, fallback: string) {
-    const result = data as { msg?: string; message?: string };
+    const result = data as { msg?: string; message?: string; error?: string };
 
-    return result?.msg || result?.message || fallback;
+    return result?.msg || result?.message || result?.error || fallback;
+}
+
+/*
+    Hämtar sparad session.
+    Alla skyddade kommandon använder denna så användaren slipper --user.
+*/
+function getLoggedInUserId() {
+    const session = requireSession();
+
+    if (!session) {
+        return null;
+    }
+
+    return session.user_ID;
 }
 
 program
     .name("nodecore")
     .description("CLI tool for NodeCore IoT platform")
     .version("0.0.1");
+
+const userCommands = program
+    .command("user")
+    .description("User commands like login, logout and session info");
 
 const devicesCommands = program
     .command("devices")
@@ -162,16 +211,90 @@ const sendCommands = program
     .description("Send test data to backend");
 
 // -----------------------------------------------------------------------------
+// user login
+// -----------------------------------------------------------------------------
+
+userCommands
+    .command("login")
+    .description("Login and save session locally")
+    .requiredOption("--username <username>", "username or email")
+    .requiredOption("--password <password>", "password")
+    .action(async (options) => {
+        try {
+            const response = await axios.post(`${API_URL}/api/user/login`, {
+                username: options.username.trim(),
+                password: options.password,
+            });
+
+            const data = response.data;
+
+            if (!data?.success) {
+                console.log(getMessage(data, "Login failed."));
+                return;
+            }
+
+            const userId = Number(data.data.user_ID);
+
+            if (!Number.isFinite(userId)) {
+                console.error(
+                    "Login succeeded but server returned invalid user_ID.",
+                );
+                return;
+            }
+
+            saveSession({
+                user_ID: userId,
+                username: options.username.trim(),
+                token: data.token,
+            });
+
+            console.log(data.message || "Successfully logged in!");
+            console.log(`user_ID: ${userId}`);
+            console.log(`Session saved to: ${getSessionPath()}`);
+        } catch (error) {
+            handleAxiosError(error);
+        }
+    });
+
+// -----------------------------------------------------------------------------
+// user me
+// -----------------------------------------------------------------------------
+
+userCommands
+    .command("me")
+    .description("Show current logged in user")
+    .action(() => {
+        const session = requireSession();
+        if (!session) return;
+
+        console.log("Logged in:");
+        console.log(`user_ID: ${session.user_ID}`);
+        console.log(`username: ${session.username ?? "N/A"}`);
+        console.log(`token: ${session.token ? "saved" : "not saved"}`);
+        console.log(`session: ${getSessionPath()}`);
+    });
+
+// -----------------------------------------------------------------------------
+// user logout
+// -----------------------------------------------------------------------------
+
+userCommands
+    .command("logout")
+    .description("Logout and remove saved session")
+    .action(() => {
+        clearSession();
+        console.log("Logged out.");
+    });
+// -----------------------------------------------------------------------------
 // devices list
 // -----------------------------------------------------------------------------
 
 devicesCommands
     .command("list")
-    .description("List devices for the user")
-    .requiredOption("-u, --user <userId>", "user ID")
-    .action(async (options) => {
+    .description("List devices for the logged in user")
+    .action(async () => {
         try {
-            const userId = parseRequiredNumber(options.user, "user ID");
+            const userId = getLoggedInUserId();
             if (userId === null) return;
 
             const response = await axios.get(
@@ -188,17 +311,13 @@ devicesCommands
             const rows = getRows<DeviceRow>(data);
 
             if (rows.length === 0) {
-                console.log(`No devices found for user ${userId}.`);
+                console.log("No devices found.");
                 return;
             }
 
             printTable<DeviceRow>(
                 [
-                    {
-                        label: "ID",
-                        width: 10,
-                        value: (row) => row.device_ID,
-                    },
+                    { label: "ID", width: 10, value: (row) => row.device_ID },
                     {
                         label: "Name",
                         width: 16,
@@ -223,15 +342,15 @@ devicesCommands
 
 deviceCommands
     .command("status")
-    .description("Gives the status of given device and user")
+    .description("Get device status")
     .requiredOption("-d, --device <deviceId>", "device ID")
-    .requiredOption("-u, --user <userId>", "user ID")
     .action(async (options) => {
         try {
-            const userId = parseRequiredNumber(options.user, "user ID");
-            const deviceId = parseRequiredNumber(options.device, "device ID");
+            const userId = getLoggedInUserId();
+            if (userId === null) return;
 
-            if (userId === null || deviceId === null) return;
+            const deviceId = parseRequiredNumber(options.device, "device ID");
+            if (deviceId === null) return;
 
             const response = await axios.get(
                 `${API_URL}/api/device/status/get/${userId}?device_ID=${deviceId}`,
@@ -253,11 +372,7 @@ deviceCommands
 
             printTable<DeviceStatusRow>(
                 [
-                    {
-                        label: "ID",
-                        width: 10,
-                        value: (row) => row.device_ID,
-                    },
+                    { label: "ID", width: 10, value: (row) => row.device_ID },
                     {
                         label: "Name",
                         width: 16,
@@ -306,15 +421,15 @@ deviceCommands
 
 deviceCommands
     .command("position")
-    .description("Gives device latest position")
-    .requiredOption("-u, --user <userId>", "user ID")
+    .description("Get latest device position")
     .requiredOption("-d, --device <deviceId>", "device ID")
     .action(async (options) => {
         try {
-            const userId = parseRequiredNumber(options.user, "user ID");
-            const deviceId = parseRequiredNumber(options.device, "device ID");
+            const userId = getLoggedInUserId();
+            if (userId === null) return;
 
-            if (userId === null || deviceId === null) return;
+            const deviceId = parseRequiredNumber(options.device, "device ID");
+            if (deviceId === null) return;
 
             const response = await axios.get(
                 `${API_URL}/api/device/gnss/get/position/${userId}?device_ID=${deviceId}`,
@@ -346,16 +461,8 @@ deviceCommands
                         width: 16,
                         value: (row) => row.device_name,
                     },
-                    {
-                        label: "Lat",
-                        width: 14,
-                        value: (row) => row.lat,
-                    },
-                    {
-                        label: "Lon",
-                        width: 14,
-                        value: (row) => row.lon,
-                    },
+                    { label: "Lat", width: 14, value: (row) => row.lat },
+                    { label: "Lon", width: 14, value: (row) => row.lon },
                     {
                         label: "Acc",
                         width: 10,
@@ -384,19 +491,18 @@ deviceCommands
 
 deviceCommands
     .command("history")
-    .description("Gives the position history of the given device")
-    .requiredOption("-u, --user <userId>", "user ID")
+    .description("Get device position history")
     .requiredOption("-d, --device <deviceId>", "device ID")
     .option("-l, --limit <limit>", "limit of history to display", "10")
     .action(async (options) => {
         try {
-            const userId = parseRequiredNumber(options.user, "user ID");
+            const userId = getLoggedInUserId();
+            if (userId === null) return;
+
             const deviceId = parseRequiredNumber(options.device, "device ID");
             const limit = parseRequiredNumber(options.limit, "limit");
 
-            if (userId === null || deviceId === null || limit === null) {
-                return;
-            }
+            if (deviceId === null || limit === null) return;
 
             const response = await axios.get(
                 `${API_URL}/api/device/gnss/get/position/${userId}?device_ID=${deviceId}&limit=${limit}`,
@@ -428,16 +534,8 @@ deviceCommands
                         width: 16,
                         value: (row) => row.device_name,
                     },
-                    {
-                        label: "Lat",
-                        width: 14,
-                        value: (row) => row.lat,
-                    },
-                    {
-                        label: "Lon",
-                        width: 14,
-                        value: (row) => row.lon,
-                    },
+                    { label: "Lat", width: 14, value: (row) => row.lat },
+                    { label: "Lon", width: 14, value: (row) => row.lon },
                     {
                         label: "Acc",
                         width: 10,
@@ -460,21 +558,89 @@ deviceCommands
         }
     });
 
-// -----------------------------------------------------------------------------
-// device alerts
-// -----------------------------------------------------------------------------
+deviceCommands
+    .command("event")
+    .description("Get events of a specific device")
+    .requiredOption(
+        "-dt --data_transport <data_transport>",
+        "The type of data transport it is",
+    )
+    .requiredOption(
+        "-l --limit <limit>",
+        "Limit of how many rows you want of that device event",
+    )
+    .action(async (options) => {
+        try {
+            const userId = getLoggedInUserId();
+            if (userId === null) return;
+
+            const response: any = await axios.get(
+                `${API_URL}/api/device/event/get/${userId}?data_transport=${options.data_transport}&limit=${options.limit}`,
+            );
+
+            console.log(response.data);
+
+            const rows = getRows<DeviceEventRow>(response.data);
+
+            if (rows.length === 0) {
+                console.log(`No events found for ${userId}.`);
+                return;
+            }
+
+            printTable<DeviceEventRow>(
+                [
+                    {
+                        label: "Device",
+                        width: 10,
+                        value: (row) => row.device_ID,
+                    },
+                    {
+                        label: "Name",
+                        width: 18,
+                        value: (row) => row.device_name,
+                    },
+                    {
+                        label: "Event",
+                        width: 26,
+                        value: (row) => row.event_type,
+                    },
+                    {
+                        label: "Severity",
+                        width: 10,
+                        value: (row) => row.severity,
+                    },
+                    {
+                        label: "Message",
+                        width: 36,
+                        value: (row) => row.message,
+                    },
+                    {
+                        label: "Firmware",
+                        width: 10,
+                        value: (row) => row.firmware_version,
+                    },
+                    {
+                        label: "Created",
+                        width: 18,
+                        value: (row) => formatDate(row.created_at),
+                    },
+                ],
+                rows,
+            );
+        } catch (error) {}
+    });
 
 deviceCommands
     .command("alerts")
-    .description("Gets alerts for given device and user")
+    .description("Get geofence alerts for device")
     .requiredOption("-d, --device <deviceId>", "device ID")
-    .requiredOption("-u, --user <userId>", "user ID")
     .action(async (options) => {
         try {
-            const userId = parseRequiredNumber(options.user, "user ID");
-            const deviceId = parseRequiredNumber(options.device, "device ID");
+            const userId = getLoggedInUserId();
+            if (userId === null) return;
 
-            if (userId === null || deviceId === null) return;
+            const deviceId = parseRequiredNumber(options.device, "device ID");
+            if (deviceId === null) return;
 
             const response = await axios.get(
                 `${API_URL}/api/device/alert/get/${deviceId}?status_type=geofence&user_ID=${userId}`,
@@ -496,11 +662,7 @@ deviceCommands
 
             printTable<DeviceAlertRow>(
                 [
-                    {
-                        label: "ID",
-                        width: 8,
-                        value: (row) => row.id,
-                    },
+                    { label: "ID", width: 8, value: (row) => row.id },
                     {
                         label: "Device",
                         width: 10,
@@ -526,21 +688,13 @@ deviceCommands
                         width: 10,
                         value: (row) => row.from_status,
                     },
-                    {
-                        label: "To",
-                        width: 10,
-                        value: (row) => row.to_status,
-                    },
+                    { label: "To", width: 10, value: (row) => row.to_status },
                     {
                         label: "Value",
                         width: 10,
                         value: (row) => row.status_value,
                     },
-                    {
-                        label: "Reason",
-                        width: 28,
-                        value: (row) => row.reason,
-                    },
+                    { label: "Reason", width: 28, value: (row) => row.reason },
                     {
                         label: "Created",
                         width: 18,
@@ -560,7 +714,7 @@ deviceCommands
 
 sendCommands
     .command("status")
-    .description("Sends test status data to a device")
+    .description("Send test status data to backend")
     .requiredOption("-d, --device <deviceId>", "device ID")
     .requiredOption("-b, --battery <batteryPercent>", "battery percent")
     .requiredOption("-f, --firmware <firmwareVersion>", "firmware version")
@@ -606,7 +760,7 @@ sendCommands
 
 sendCommands
     .command("gnss")
-    .description("Sends test GNSS data to a device")
+    .description("Send test GNSS data to backend")
     .requiredOption("-d, --device <deviceId>", "device ID")
     .requiredOption("--lat <lat>", "GNSS latitude value")
     .requiredOption("--lon <lon>", "GNSS longitude value")

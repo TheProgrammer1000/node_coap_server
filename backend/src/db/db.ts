@@ -413,3 +413,41 @@ export async function add_device_gnss_data(
 
     return result[0];
 }
+
+export async function add_device_event(
+    device_ID: number,
+    event_type: string,
+    severity: string,
+    message: string,
+    data_transport: string,
+    firmware_version: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_event(?, ?, ?, ?, ?, ?);",
+        [
+            device_ID,
+            event_type,
+            severity,
+            message,
+            data_transport,
+            firmware_version,
+        ],
+    );
+
+    console.log(result);
+
+    return result[0];
+}
+
+export async function get_device_event(
+    user_ID: number,
+    data_transport: string,
+    limit: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_device_event(?, ?, ?);",
+        [user_ID, data_transport, limit],
+    );
+
+    return result[0];
+}

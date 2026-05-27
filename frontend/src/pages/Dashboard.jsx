@@ -129,13 +129,6 @@ function getDeviceStatus(point) {
     const lastSeen = getDeviceLastSeen(point);
     const ageMs = getAgeMs(lastSeen);
 
-    /*
-        Frontend räknar status live från last_seen.
-        Backendens connection_status används bara som fallback om last_seen saknas.
-
-        Detta gör att dashboarden automatiskt går från online till offline
-        efter 4 minuter utan att sidan behöver laddas om eller göra en ny fetch.
-    */
     if (ageMs !== null) {
         return ageMs <= ONLINE_THRESHOLD_MS ? "online" : "offline";
     }
@@ -178,6 +171,117 @@ function getStatusClasses(status) {
 
 function getAccuracyWarningClasses() {
     return "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:ring-orange-800";
+}
+
+function getBatteryStyles(batteryPercent) {
+    const rawValue = Number(batteryPercent);
+
+    if (!Number.isFinite(rawValue)) {
+        return {
+            value: null,
+            label: "Ingen batteridata",
+            fillClass: "bg-slate-500",
+            glowClass: "shadow-slate-500/30",
+            textClass: "text-slate-400",
+            borderClass: "border-slate-500/50",
+        };
+    }
+
+    const value = Math.max(0, Math.min(100, Math.round(rawValue)));
+
+    if (value <= 20) {
+        return {
+            value,
+            label: "Kritiskt låg",
+            fillClass: "bg-red-500",
+            glowClass: "shadow-red-500/50",
+            textClass: "text-red-300",
+            borderClass: "border-red-500/60",
+        };
+    }
+
+    if (value <= 40) {
+        return {
+            value,
+            label: "Låg nivå",
+            fillClass: "bg-orange-500",
+            glowClass: "shadow-orange-500/50",
+            textClass: "text-orange-300",
+            borderClass: "border-orange-500/60",
+        };
+    }
+
+    if (value <= 60) {
+        return {
+            value,
+            label: "Medel nivå",
+            fillClass: "bg-yellow-400",
+            glowClass: "shadow-yellow-400/50",
+            textClass: "text-yellow-300",
+            borderClass: "border-yellow-400/60",
+        };
+    }
+
+    return {
+        value,
+        label: "Bra nivå",
+        fillClass: "bg-emerald-500",
+        glowClass: "shadow-emerald-500/50",
+        textClass: "text-emerald-300",
+        borderClass: "border-emerald-500/60",
+    };
+}
+
+function BatteryLevelBar({ batteryPercent }) {
+    const battery = getBatteryStyles(batteryPercent);
+
+    return (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/70">
+            <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        Batterinivå
+                    </p>
+
+                    <p
+                        className={`mt-0.5 text-sm font-black ${battery.textClass}`}
+                    >
+                        {battery.value !== null
+                            ? `${battery.value}%`
+                            : battery.label}
+                    </p>
+                </div>
+
+                {battery.value !== null && (
+                    <span
+                        className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${battery.borderClass} ${battery.textClass}`}
+                    >
+                        {battery.label}
+                    </span>
+                )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+                <div
+                    className={`relative h-8 flex-1 overflow-hidden rounded-lg border-2 bg-slate-950 p-1 ${battery.borderClass}`}
+                >
+                    <div
+                        className={`h-full rounded-md shadow-[0_0_18px] transition-all duration-500 ${battery.fillClass} ${battery.glowClass}`}
+                        style={{
+                            width:
+                                battery.value !== null
+                                    ? `${battery.value}%`
+                                    : "0%",
+                        }}
+                    />
+                </div>
+
+                <div
+                    className={`h-4 w-1.5 rounded-r-sm ${battery.value !== null ? battery.fillClass : "bg-slate-500"}`}
+                />
+            </div>
+        </div>
+    );
 }
 
 function getMarkerIcon(status, selected) {
@@ -829,12 +933,6 @@ export default function Dashboard() {
         );
     }, [sortedDevices]);
 
-    /*
-        Ingen polling behövs för att status ska slå över till offline.
-        nowTick nedan triggar en re-render var 15:e sekund och getDeviceStatus()
-        räknar om status från last_seen.
-    */
-
     const positionedDevices = useMemo(() => {
         return sortedDevices.filter((device) => hasValidPosition(device));
     }, [sortedDevices]);
@@ -1068,12 +1166,6 @@ export default function Dashboard() {
             return;
         }
 
-        /*
-            Socket-anslutning och join-user-room sköts globalt i AppLayout.
-            Dashboard ska bara lyssna på live-events och aldrig connecta,
-            joina eller disconnecta socketen. Annars kan andra sidor tappa
-            live-uppdateringar på live-servern.
-        */
         setSocketStatus(socket.connected ? "connected" : "disconnected");
 
         function handleConnect() {
@@ -1880,7 +1972,7 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        <div className="max-h-[360px] min-h-[230px] overflow-y-auto p-4">
+                        <div className="max-h-[520px] min-h-[230px] overflow-y-auto p-4">
                             {loading ? (
                                 <p className="px-2 py-6 text-center text-sm text-slate-500">
                                     Laddar cellular devices...
@@ -2033,6 +2125,12 @@ export default function Dashboard() {
                                                                 </p>
                                                             </div>
                                                         </div>
+
+                                                        <BatteryLevelBar
+                                                            batteryPercent={
+                                                                device.battery_percent
+                                                            }
+                                                        />
                                                     </div>
                                                 </div>
                                             </button>
