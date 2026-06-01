@@ -3,7 +3,7 @@ import {
     get_user_devices_with_status,
     get_user_devices_lastseen_status,
     get_user_device_with_status,
-    add_device_status,
+    add_device_health,
 } from "../../../db/db.js";
 
 import { device_param, work_area_payload } from "../../../types.js";
@@ -65,7 +65,7 @@ router.post("/add", async (req, res) => {
     try {
         const { device_ID, battery_percent, firmware_version } = req.body;
 
-        const status_response = await add_device_status(
+        const status_response = await add_device_health(
             device_ID,
             battery_percent,
             firmware_version,

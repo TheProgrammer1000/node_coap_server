@@ -9,18 +9,36 @@ import {
 import {
     get_device_arealocation,
     get_last_device_state,
-    add_device_status,
+    add_device_health,
     get_userID_by_deviceID,
     add_device_state,
     add_device_alert,
     add_device_event,
+    get_device_firmware_command,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
 import { device_event_type } from "../types.js";
 
+function getCoapQuery(req: any) {
+    const url = new URL(req.url, `coap://${process.env.COAP_HOST_NAME}`);
+
+    return {
+        pathname: url.pathname,
+        query: Object.fromEntries(url.searchParams.entries()),
+    };
+}
+
 export function startCoapServer() {
-    const server = createServer((req, res) => {
+    const server = createServer(async (req, res) => {
         console.log("CoAP request:", req.method, req.url);
+        const { pathname, query } = getCoapQuery(req);
+
+        // --- LÄGG TILL DETTA HÄR FÖR ATT STOPPA KRASCHEN ---
+        res.on("error", (err) => {
+            console.log(
+                `[CoAP Warning] Det gick inte att skicka svar till en enhet: ${err.message}`,
+            );
+        });
 
         if (req.url === "/sensor_data/gps" && req.method === "POST") {
             let body = "";
@@ -367,7 +385,7 @@ export function startCoapServer() {
                     }
 
                     try {
-                        const status_response = await add_device_status(
+                        const status_response = await add_device_health(
                             sensorData.device_ID,
                             sensorData.battery_percent,
                             sensorData.firmware_version,
@@ -456,8 +474,91 @@ export function startCoapServer() {
                     return res.end(`Server error ${err}`);
                 }
             });
+        } else if (
+            pathname.startsWith("/device/firmware_command/") &&
+            req.method === "GET"
+        ) {
+            const device_ID = Number(pathname.split("/").pop());
 
-            return;
+            res.setOption("Content-Format", "application/json");
+
+            if (!device_ID) {
+                res.code = "4.00";
+                return res.end(
+                    JSON.stringify({
+                        success: false,
+                        message: "Missing device_ID",
+                    }),
+                );
+            }
+
+            try {
+                const db_response =
+                    await get_device_firmware_command(device_ID);
+                console.log("Firmware command DB response:", db_response);
+
+                res.code = "2.05"; // Content (Standard framgångsrik GET i CoAP)
+                return res.end(
+                    JSON.stringify({
+                        success: true,
+                        message: "Successfully fetched firmware command!",
+                        device_ID,
+                        data: db_response,
+                    }),
+                );
+            } catch (err) {
+                console.error("Failed to fetch firmware command:", err);
+                res.code = "5.00";
+                return res.end(
+                    JSON.stringify({
+                        success: false,
+                        message: "Server error",
+                        error: String(err),
+                    }),
+                );
+            }
+        } else if (
+            req.url === "/device/firmware_command" &&
+            req.method === "POST"
+        ) {
+            console.log("Hereeeee weee come");
+
+            let body = "";
+
+            req.on("data", (chunk) => {
+                body += chunk.toString();
+            });
+
+            req.on("end", async () => {
+                try {
+                    res.setOption("Content-Format", "text/plain");
+
+                    if (!body) {
+                        res.code = "4.00";
+                        return res.end("Missing request body");
+                    }
+
+                    const sensorData = JSON.parse(body);
+                    console.log("sensorData: ", sensorData);
+
+                    // const db_response = await add_device_event(
+                    //     sensorData.device_ID,
+                    //     sensorData.event_type,
+                    //     sensorData.severity,
+                    //     sensorData.message,
+                    //     sensorData.data_transport,
+                    //     sensorData.firmware_version,
+                    // );
+
+                    // console.log(db_response);
+
+                    res.code = "2.01";
+                    return res.end(`Successfully added device event!`);
+                } catch (err) {
+                    res.code = "5.00";
+                    return res.end(`Server error ${err}`);
+                }
+            });
         }
     });
 

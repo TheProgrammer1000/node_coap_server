@@ -227,13 +227,13 @@ export async function get_all_device_alert(
     return result[0];
 }
 
-export async function add_device_status(
+export async function add_device_health(
     device_ID: number,
     battery_percent: number,
     firmware_version: string,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_device_status(?, ?, ?);",
+        "CALL add_device_health(?, ?, ?);",
         [device_ID, battery_percent, firmware_version],
     );
 
@@ -447,6 +447,27 @@ export async function get_device_event(
     const [result] = await pool.query<RowDataPacket[][]>(
         "CALL get_device_event(?, ?, ?);",
         [user_ID, data_transport, limit],
+    );
+
+    return result[0];
+}
+
+export async function add_device_firmware_que(
+    device_ID: number,
+    command: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_firmware_que(?, ?);",
+        [device_ID, command],
+    );
+
+    return result[0];
+}
+
+export async function get_device_firmware_command(device_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_device_firmware_command(?);",
+        [device_ID],
     );
 
     return result[0];

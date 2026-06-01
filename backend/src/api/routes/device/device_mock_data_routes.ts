@@ -1,7 +1,7 @@
 import { response, Router } from "express";
 
 import { sendMockPositions } from "../../../coap/demo_routes.js";
-import { add_device_status, add_device_state } from "../../../db/db.js";
+import { add_device_health, add_device_state } from "../../../db/db.js";
 
 const router = Router();
 
@@ -54,7 +54,7 @@ router.post("/cellular/add/status", async (req, res) => {
     const battery_percent = Math.floor(Math.random() * 100) + +1;
     const firmware_version = "1.0.1";
 
-    const response = await add_device_status(
+    const response = await add_device_health(
         device_ID,
         battery_percent,
         firmware_version,

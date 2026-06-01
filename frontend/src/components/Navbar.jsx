@@ -22,6 +22,7 @@ import {
     MapPinHouse,
     UserCircle2,
     TerminalSquare,
+    Cpu,
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
@@ -32,10 +33,6 @@ import { Button } from "@/components/ui/button";
 
 const SELECTED_TRANSPORT_STORAGE_KEY = "selected_data_transport";
 
-/*
-    Routes som får finnas utan att behöva synas i navbaren.
-    Det gör att /devices/:device_ID och framtida detail-sidor inte redirectas.
-*/
 const PUBLIC_PROTECTED_PATHS = [
     "/landing-page",
     "/register-device",
@@ -50,6 +47,7 @@ const CELLULAR_ONLY_PATHS = [
     "/work-areas",
     "/geofence",
     "/mock-cellular-route",
+    "/device-control",
 ];
 
 const BLE_ONLY_PATHS = ["/motion-live", "/mock-motion-session"];
@@ -102,12 +100,6 @@ function isAllowedProtectedPath(pathname, deviceGroups) {
         return deviceGroups.hasBle;
     }
 
-    /*
-        Viktigt:
-        Okända protected routes blockeras inte av Navbar.
-        App.jsx får avgöra om routen finns.
-        Då slipper du lägga varje ny sida i navbaren.
-    */
     return true;
 }
 
@@ -517,6 +509,13 @@ export default function Navbar() {
                         label: "Add Device",
                         icon: CirclePlus,
                         show: true,
+                    },
+                    {
+                        to: "/device-control",
+                        activePaths: ["/device-control"],
+                        label: "Device Control",
+                        icon: Cpu,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
                     },
                     {
                         to: "/device-events",

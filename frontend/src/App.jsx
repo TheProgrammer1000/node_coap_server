@@ -18,6 +18,7 @@ import MockMotionSession from "./pages/MockBleMotionSession";
 import Account from "./pages/Account";
 import DeviceEvents from "./pages/DeviceEvents";
 import DeviceDetails from "./pages/DeviceDetails";
+import DeviceControl from "./pages/DeviceControl";
 
 export default function App() {
     return (
@@ -38,19 +39,17 @@ export default function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/register-device" element={<RegisterDevice />} />
                 <Route path="/account" element={<Account />} />
-
                 <Route path="/work-areas" element={<WorkAreas />} />
                 <Route path="/geofence" element={<GeofenceDashboard />} />
-                <Route path="/mock-cellular-route" element={<MockCellular />} />
+                <Route path="/device-control" element={<DeviceControl />} />
 
+                <Route path="/mock-cellular-route" element={<MockCellular />} />
                 <Route path="/motion-live" element={<MotionLive />} />
                 <Route
                     path="/mock-motion-session"
                     element={<MockMotionSession />}
                 />
-
                 <Route path="/device-events" element={<DeviceEvents />} />
-
                 {/* DeviceDetails läser params.device_ID */}
                 <Route path="/devices/:device_ID" element={<DeviceDetails />} />
             </Route>
