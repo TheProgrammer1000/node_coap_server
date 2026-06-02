@@ -5,6 +5,7 @@ import {
     sendLiveGeofencePosition,
     sendLiveGeofenceAlert,
     sendLiveDeviceStatus,
+    sendLiveDeviceFirmwareQue,
 } from "../api/api_server.js";
 import {
     get_device_arealocation,
@@ -15,6 +16,7 @@ import {
     add_device_alert,
     add_device_event,
     get_device_firmware_command,
+    update_device_firmware_que,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
 import { device_event_type } from "../types.js";
@@ -541,20 +543,36 @@ export function startCoapServer() {
                     const sensorData = JSON.parse(body);
                     console.log("sensorData: ", sensorData);
 
-                    // const db_response = await add_device_event(
-                    //     sensorData.device_ID,
-                    //     sensorData.event_type,
-                    //     sensorData.severity,
-                    //     sensorData.message,
-                    //     sensorData.data_transport,
-                    //     sensorData.firmware_version,
-                    // );
+                    // ÄNDRING HÄR: Gör om payload-objektet till en JSON-sträng för MySQL
+                    // Om payload är null/undefined skickar vi null, annars stringifierar vi det
+                    const dbPayload: any = sensorData.payload
+                        ? JSON.stringify(sensorData.payload)
+                        : null;
 
-                    // console.log(db_response);
+                    const db_response = await update_device_firmware_que(
+                        sensorData.device_ID,
+                        sensorData.command_status,
+                        sensorData.msg,
+                        dbPayload,
+                    );
+
+                    const [data] = await get_userID_by_deviceID(
+                        sensorData.device_ID,
+                    );
+                    const user_ID = data[0].user_ID;
+
+                    await sendLiveDeviceFirmwareQue(user_ID, sensorData);
+
+                    console.log(db_response);
+                    console.log(
+                        "Live device firmware que data sent:",
+                        sensorData,
+                    );
 
                     res.code = "2.01";
                     return res.end(`Successfully added device event!`);
                 } catch (err) {
+                    console.error("Det uppstod ett fel i backend:", err); // Bra att logga hela felet i din terminal också!
                     res.code = "5.00";
                     return res.end(`Server error ${err}`);
                 }

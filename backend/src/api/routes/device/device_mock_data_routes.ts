@@ -31,7 +31,7 @@ router.post("/cellular", async (req, res) => {
             interval_ms,
         });
 
-        return res.status(200).json({
+        return res.status(201).json({
             success: true,
             message: "Mock cellular GNSS route sent",
             data: result,

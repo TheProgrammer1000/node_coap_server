@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 
 import Navbar from "../components/Navbar";
+
+// Importera socket-instansen på samma sätt som i din Dashboard
+import { socket } from "@/lib/socket";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +51,6 @@ function getNestedValue(data, keys) {
             return data[key];
         }
     }
-
     return null;
 }
 
@@ -122,85 +124,141 @@ function getErrorMessage(error) {
 
 function getErrorDetails(error) {
     const data = error?.response?.data;
-
-    if (data) {
-        return data;
-    }
-
-    return {
-        message: error?.message ?? "Okänt fel",
-    };
+    if (data) return data;
+    return { message: error?.message ?? "Okänt fel" };
 }
 
 export default function DeviceControl() {
     const navigate = useNavigate();
 
-    const [deviceId, setDeviceId] = useState("88888888");
+    // Hämta user_ID från localStorage precis som på din Dashboard-sida
+    const storedUser = localStorage.getItem("user");
+    const user = storedUser ? JSON.parse(storedUser) : null;
+    const userId = user?.user_ID || null;
+
+    const [deviceId, setDeviceId] = useState("200001");
     const [isLoading, setIsLoading] = useState(false);
+
+    // NYTT: State för realtidslyssning och vänteläge på hårdvaran
+    const [isWaitingForDevice, setIsWaitingForDevice] = useState(false);
+    const [liveDeviceData, setLiveDeviceData] = useState(null);
 
     const [notice, setNotice] = useState(null);
     const [responseData, setResponseData] = useState(null);
     const [technicalDetails, setTechnicalDetails] = useState(null);
 
-    const parsedDeviceId = useMemo(() => {
-        const value = Number(deviceId);
-
-        if (!Number.isFinite(value)) {
-            return null;
-        }
-
-        return value;
+    // Validera att strängen bara innehåller siffror innan vi skickar
+    const isValidId = useMemo(() => {
+        const trimmed = deviceId.trim();
+        return trimmed !== "" && /^\d+$/.test(trimmed);
     }, [deviceId]);
 
     const requestBody = useMemo(
         () => ({
             command: "diagnostic",
-            device_ID: parsedDeviceId ?? deviceId,
+            device_ID: isValidId ? Number(deviceId.trim()) : deviceId,
         }),
-        [parsedDeviceId, deviceId],
+        [isValidId, deviceId],
     );
+
+    // --- NYTT: Hantera anslutning till rum och lyssna på WebSocket ---
+    useEffect(() => {
+        if (!userId || !socket) return;
+
+        // Se till att socket är ansluten och gå med i användarrummet (om backend kräver det via event)
+        if (socket.disconnected) {
+            socket.connect();
+        }
+
+        // Rummet på backend är byggt som `user:${userId}`
+        const roomName = `user:${userId}`;
+        socket.emit("join-room", roomName); // Justera eventnamn om din backend lyssnar på något annat för att joina rum
+
+        function handleLiveFirmwareQueue(queData) {
+            console.log(
+                "Mottog live-data via WebSocket (device:firmware_que):",
+                queData,
+            );
+
+            // Säkerställ att inkommande data är för den enhet vi kollar på just nu
+            const currentUIId = isValidId ? Number(deviceId.trim()) : deviceId;
+            const incomingId = Number(queData?.device_ID);
+
+            if (incomingId === currentUIId) {
+                setLiveDeviceData(queData);
+                setIsWaitingForDevice(false); // Avbryt laddningssymbolen när hårdvaran svarat!
+
+                if (queData.command_status === "success") {
+                    setNotice({
+                        type: "success",
+                        title: "Modem svarade med framgång!",
+                        message:
+                            queData.msg ||
+                            "Diagnostikdata har tagits emot och sparats framgångsrikt.",
+                    });
+                } else {
+                    setNotice({
+                        type: "error",
+                        title: "Fel vid exekvering i hårdvara",
+                        message:
+                            queData.msg ||
+                            "Modemet rapporterade ett fel under diagnostic.",
+                    });
+                }
+            }
+        }
+
+        // Starta lyssnaren
+        socket.on("device:firmware_que", handleLiveFirmwareQueue);
+
+        // Städa upp när komponenten avmonteras eller om enhets-ID ändras
+        return () => {
+            socket.off("device:firmware_que", handleLiveFirmwareQueue);
+        };
+    }, [userId, deviceId, isValidId]);
 
     function resetResult() {
         setNotice(null);
         setResponseData(null);
         setTechnicalDetails(null);
+        setLiveDeviceData(null);
+        setIsWaitingForDevice(false);
     }
 
     async function runDiagnostic() {
         resetResult();
 
-        if (!parsedDeviceId) {
+        if (!isValidId) {
             setNotice({
                 type: "error",
                 title: "Fel device ID",
-                message: "Device ID måste vara ett nummer.",
+                message:
+                    "Device ID måste vara ett giltigt nummer (endast siffror).",
             });
-
             return;
         }
 
         setIsLoading(true);
 
         try {
-            const body = {
-                command: "diagnostic",
-                device_ID: parsedDeviceId,
-            };
-
             const response = await axios.post(
                 `${API_BASE_URL}/api/device/firmware/add/que`,
-                body,
+                requestBody,
             );
 
-            console.log("Diagnostic queued:", response.data);
+            console.log("Diagnostic queued successfully:", response.data);
 
             setResponseData(response.data);
             setTechnicalDetails(null);
 
+            // Sätt igång vänteläget för hårdvaran (CoAP -> WebSocket-flödet)
+            setIsWaitingForDevice(true);
+
             setNotice({
-                type: "success",
-                title: "Command skickat",
-                message: "Diagnostic har lagts i firmware queue.",
+                type: "warning",
+                title: "Kommandot köat",
+                message:
+                    "Väntar på att cellular-enheten ska hämta kommandot via CoAP och skicka svar...",
             });
         } catch (error) {
             console.error("Diagnostic failed:", error);
@@ -211,6 +269,7 @@ export default function DeviceControl() {
 
             setResponseData(null);
             setTechnicalDetails(details);
+            setIsWaitingForDevice(false);
 
             setNotice({
                 type: duplicate ? "warning" : "error",
@@ -225,26 +284,18 @@ export default function DeviceControl() {
     }
 
     function getNoticeClass(type) {
-        if (type === "success") {
+        if (type === "success")
             return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-        }
-
-        if (type === "warning") {
+        if (type === "warning")
             return "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300";
-        }
-
         return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300";
     }
 
     function getNoticeIcon(type) {
-        if (type === "success") {
+        if (type === "success")
             return <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />;
-        }
-
-        if (type === "warning") {
-            return <Info className="mt-0.5 h-5 w-5 shrink-0" />;
-        }
-
+        if (type === "warning")
+            return <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" />;
         return <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />;
     }
 
@@ -288,7 +339,6 @@ export default function DeviceControl() {
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-300">
                                 <Database className="h-6 w-6" />
                             </div>
-
                             <div>
                                 <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
                                     Endpoint
@@ -303,7 +353,6 @@ export default function DeviceControl() {
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
                                 <Wifi className="h-6 w-6" />
                             </div>
-
                             <div>
                                 <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
                                     Command
@@ -318,7 +367,6 @@ export default function DeviceControl() {
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-300">
                                 <ShieldCheck className="h-6 w-6" />
                             </div>
-
                             <div>
                                 <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
                                     Device ID
@@ -335,12 +383,10 @@ export default function DeviceControl() {
                             <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/15">
                                 <TerminalSquare className="h-9 w-9" />
                             </div>
-
                             <div>
                                 <CardTitle className="text-3xl">
                                     Kör diagnostic
                                 </CardTitle>
-
                                 <CardDescription className="text-base text-blue-100">
                                     Skickar diagnostic-command till firmware
                                     queue.
@@ -353,7 +399,6 @@ export default function DeviceControl() {
                                 <label className="text-sm font-bold text-slate-500 dark:text-slate-400">
                                     Device ID
                                 </label>
-
                                 <input
                                     value={deviceId}
                                     onChange={(event) => {
@@ -361,7 +406,7 @@ export default function DeviceControl() {
                                         resetResult();
                                     }}
                                     className="mt-2 h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 font-mono text-sm font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950"
-                                    placeholder="88888888"
+                                    placeholder="200001"
                                 />
                             </div>
 
@@ -369,7 +414,6 @@ export default function DeviceControl() {
                                 <p className="mb-2 text-sm font-bold text-slate-500 dark:text-slate-400">
                                     Body som skickas
                                 </p>
-
                                 <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-sm text-white">
                                     {safeStringify(requestBody)}
                                 </pre>
@@ -378,13 +422,18 @@ export default function DeviceControl() {
                             <Button
                                 type="button"
                                 onClick={runDiagnostic}
-                                disabled={isLoading}
+                                disabled={isLoading || isWaitingForDevice}
                                 className="h-16 w-full rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25 transition hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
                             >
                                 {isLoading ? (
                                     <>
                                         <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                                        Skickar diagnostic...
+                                        Köar i databas...
+                                    </>
+                                ) : isWaitingForDevice ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+                                        Väntar på modemsvar via socket...
                                     </>
                                 ) : (
                                     <>
@@ -401,7 +450,6 @@ export default function DeviceControl() {
                                     )}`}
                                 >
                                     {getNoticeIcon(notice.type)}
-
                                     <div>
                                         <p className="font-black">
                                             {notice.title}
@@ -421,55 +469,72 @@ export default function DeviceControl() {
                                 <Activity className="h-6 w-6 text-blue-600 dark:text-blue-300" />
                                 Resultat
                             </CardTitle>
-
                             <CardDescription>
-                                Här visas svaret från backend efter
-                                POST-anropet.
+                                Här visas bekräftelse från API samt realtidssvar
+                                från modemet via WebSockets.
                             </CardDescription>
                         </CardHeader>
 
                         <CardContent className="space-y-4">
-                            {!responseData && !technicalDetails ? (
+                            {!responseData &&
+                            !technicalDetails &&
+                            !isWaitingForDevice ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-950">
                                     <Activity className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                                     <p className="font-bold text-slate-600 dark:text-slate-400">
-                                        Inget command skickat ännu.
+                                        Inget aktivt diagnostic-kommando.
                                     </p>
                                 </div>
                             ) : (
                                 <>
-                                    {responseData && (
-                                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-700 dark:text-emerald-300">
-                                            <p className="text-sm font-bold opacity-80">
-                                                Status
-                                            </p>
+                                    {/* Laddningsindikator för hårdvaran */}
+                                    {isWaitingForDevice && (
+                                        <div className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-orange-700 dark:text-orange-300 flex items-center gap-3">
+                                            <Loader2 className="h-6 w-6 animate-spin shrink-0" />
+                                            <div>
+                                                <p className="text-xs font-bold uppercase tracking-wider opacity-75">
+                                                    Status
+                                                </p>
+                                                <p className="text-xl font-black">
+                                                    Väntar på hårdvaran...
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
 
-                                            <p className="mt-1 text-3xl font-black">
-                                                Skickat
+                                    {/* Slutgiltig status från hårdvaran via WebSocket */}
+                                    {liveDeviceData && (
+                                        <div
+                                            className={`rounded-2xl border p-4 ${
+                                                liveDeviceData.command_status ===
+                                                "success"
+                                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                                    : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
+                                            }`}
+                                        >
+                                            <p className="text-xs font-bold uppercase tracking-wider opacity-75">
+                                                Hårdvarustatus
+                                            </p>
+                                            <p className="text-xl font-black">
+                                                {liveDeviceData.command_status ===
+                                                "success"
+                                                    ? "Slutförd"
+                                                    : "Misslyckades"}
                                             </p>
                                         </div>
                                     )}
 
-                                    {technicalDetails && (
-                                        <div className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-orange-700 dark:text-orange-300">
-                                            <p className="text-sm font-bold opacity-80">
-                                                Status
-                                            </p>
-
-                                            <p className="mt-1 text-3xl font-black">
-                                                Inte skickat
-                                            </p>
-                                        </div>
-                                    )}
-
+                                    {/* JSON-fönster för att visa data */}
                                     <div className="rounded-2xl bg-slate-950 p-4 text-white">
                                         <p className="mb-2 text-sm font-bold text-slate-400">
-                                            Backend response
+                                            {liveDeviceData
+                                                ? "Mottagen hårdvarudata (Från WebSocket)"
+                                                : "Kö-bekräftelse (Från API)"}
                                         </p>
-
-                                        <pre className="max-h-96 overflow-auto text-sm">
+                                        <pre className="max-h-96 overflow-auto text-sm font-mono">
                                             {safeStringify(
-                                                responseData ??
+                                                liveDeviceData ??
+                                                    responseData ??
                                                     technicalDetails,
                                             )}
                                         </pre>

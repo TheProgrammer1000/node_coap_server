@@ -472,3 +472,30 @@ export async function get_device_firmware_command(device_ID: number) {
 
     return result[0];
 }
+
+//p_device_ID BIGINT, p_command_status VARCHAR(255), p_msg TEXT, p_payload JSON
+export async function update_device_firmware_que(
+    device_ID: number,
+    command_status: string,
+    msg: string,
+    payload: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL update_device_firmware_que(?, ?, ?, ?);",
+        [device_ID, command_status, msg, payload],
+    );
+
+    return result[0];
+}
+
+export async function get_device_firmware_que_all_done(
+    user_ID: number,
+    device_ID: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_device_firmware_que_all_done(?, ?);",
+        [user_ID, device_ID],
+    );
+
+    return result[0];
+}
