@@ -8,18 +8,25 @@ import {
     CheckCircle2,
     Cpu,
     Database,
-    Info,
     Loader2,
     PlayCircle,
     RefreshCcw,
     ShieldCheck,
     TerminalSquare,
     Wifi,
+    Battery,
+    BatteryLow,
+    BatteryMedium,
+    BatteryFull,
+    Radio,
+    HardDrive,
+    History,
+    Calendar,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 
 import Navbar from "../components/Navbar";
-
-// Importera socket-instansen på samma sätt som i din Dashboard
 import { socket } from "@/lib/socket";
 
 import { Button } from "@/components/ui/button";
@@ -35,14 +42,6 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
 function isObject(value) {
     return value !== null && typeof value === "object";
-}
-
-function safeStringify(value) {
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch {
-        return String(value);
-    }
 }
 
 function getNestedValue(data, keys) {
@@ -112,7 +111,7 @@ function getErrorMessage(error) {
             return nestedMessage;
         }
 
-        return "Backend returnerade ett fel, men svaret var ett object. Se teknisk information nedan.";
+        return "Backend returnerade ett fel, men svaret var ett object.";
     }
 
     if (error?.message) {
@@ -128,10 +127,55 @@ function getErrorDetails(error) {
     return { message: error?.message ?? "Okänt fel" };
 }
 
+function getRsrpDetails(rsrp) {
+    if (rsrp === undefined || rsrp === null || Number.isNaN(Number(rsrp))) {
+        return {
+            text: "Okänd",
+            textColor: "text-slate-500",
+        };
+    }
+    const value = Number(rsrp);
+
+    if (value >= -85) {
+        return {
+            text: "Utmärkt",
+            textColor: "text-emerald-600 dark:text-emerald-400",
+        };
+    } else if (value >= -95) {
+        return {
+            text: "Bra",
+            textColor: "text-green-600 dark:text-green-400",
+        };
+    } else if (value >= -105) {
+        return {
+            text: "Okej",
+            textColor: "text-amber-600 dark:text-amber-500",
+        };
+    } else if (value >= -115) {
+        return {
+            text: "Dålig",
+            textColor: "text-orange-600 dark:text-orange-400",
+        };
+    } else {
+        return {
+            text: "Extremt dålig",
+            textColor: "text-red-600 dark:text-red-400",
+        };
+    }
+}
+
+function getOperatorName(operator) {
+    const opStr = String(operator).trim();
+    if (opStr === "24001") return "Telia (SE)";
+    if (opStr === "24002") return "Tele2 (SE)";
+    if (opStr === "24007") return "Telenor (SE)";
+    if (opStr === "24008") return "Tre (SE)";
+    return opStr || "Okänd";
+}
+
 export default function DeviceControl() {
     const navigate = useNavigate();
 
-    // Hämta user_ID från localStorage precis som på din Dashboard-sida
     const storedUser = localStorage.getItem("user");
     const user = storedUser ? JSON.parse(storedUser) : null;
     const userId = user?.user_ID || null;
@@ -139,7 +183,6 @@ export default function DeviceControl() {
     const [deviceId, setDeviceId] = useState("200001");
     const [isLoading, setIsLoading] = useState(false);
 
-    // NYTT: State för realtidslyssning och vänteläge på hårdvaran
     const [isWaitingForDevice, setIsWaitingForDevice] = useState(false);
     const [liveDeviceData, setLiveDeviceData] = useState(null);
 
@@ -147,7 +190,13 @@ export default function DeviceControl() {
     const [responseData, setResponseData] = useState(null);
     const [technicalDetails, setTechnicalDetails] = useState(null);
 
-    // Validera att strängen bara innehåller siffror innan vi skickar
+    const [historyList, setHistoryList] = useState([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+
+    // State för att hålla koll på vilket historiskt ID som är öppet/expanderat
+    const [expandedHistoryId, setExpandedHistoryId] = useState(null);
+
     const isValidId = useMemo(() => {
         const trimmed = deviceId.trim();
         return trimmed !== "" && /^\d+$/.test(trimmed);
@@ -161,32 +210,142 @@ export default function DeviceControl() {
         [isValidId, deviceId],
     );
 
-    // --- NYTT: Hantera anslutning till rum och lyssna på WebSocket ---
+    const parsedPayload = useMemo(() => {
+        if (!liveDeviceData?.payload) return null;
+        if (typeof liveDeviceData.payload === "string") {
+            try {
+                return JSON.parse(liveDeviceData.payload);
+            } catch {
+                return null;
+            }
+        }
+        return liveDeviceData.payload;
+    }, [liveDeviceData]);
+
+    const fetchDiagnosticHistory = async () => {
+        if (!userId || !isValidId) return;
+        setIsLoadingHistory(true);
+        try {
+            const currentUIId = Number(deviceId.trim());
+            const response = await axios.get(
+                `${API_BASE_URL}/api/device/firmware/get/all/done`,
+                {
+                    params: {
+                        user_ID: userId,
+                        device_ID: currentUIId,
+                    },
+                },
+            );
+            if (response.data && response.data.success) {
+                setHistoryList(response.data.data || []);
+            }
+        } catch (error) {
+            console.error("Kunde inte hämta diagnostikhistorik:", error);
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+
+    // DIREKT SYNCHRONISERING NÄR MAN LANDAR PÅ SIDAN ELLER BYTER ID
+    const loadLatestSessionData = async () => {
+        if (!userId || !isValidId) return;
+        try {
+            const currentUIId = Number(deviceId.trim());
+            const response = await axios.get(
+                `${API_BASE_URL}/api/device/firmware/get/all`,
+                {
+                    params: {
+                        user_ID: userId,
+                        device_ID: currentUIId,
+                    },
+                },
+            );
+
+            if (
+                response.data &&
+                response.data.success &&
+                response.data.data?.length > 0
+            ) {
+                // Sortera så vi garanterat får det absolut nyaste kommandot överst
+                const sortedCommands = [...response.data.data].sort((a, b) => {
+                    const idA = a.que_ID || 0;
+                    const idB = b.que_ID || 0;
+                    return idB - idA;
+                });
+
+                const latestCommand = sortedCommands[0];
+
+                if (latestCommand && latestCommand.command === "diagnostic") {
+                    const status = String(
+                        latestCommand.command_status,
+                    ).toLowerCase();
+                    setResponseData({ restored: true });
+
+                    if (status === "pending" || status === "processing") {
+                        setIsWaitingForDevice(true);
+                        setLiveDeviceData(null);
+                        setNotice(null);
+                    } else if (status === "success") {
+                        setLiveDeviceData(latestCommand);
+                        setIsWaitingForDevice(false);
+                        setNotice({
+                            type: "success",
+                            title: "Senaste resultat laddat",
+                            message:
+                                latestCommand.msg ||
+                                "Hämtade den senaste sparade diagnostic-datan för enheten.",
+                        });
+                    } else if (status === "failed") {
+                        setLiveDeviceData(latestCommand);
+                        setIsWaitingForDevice(false);
+                        setNotice({
+                            type: "error",
+                            title: "Senaste kommandot misslyckades",
+                            message:
+                                latestCommand.msg ||
+                                "Det senaste sparade kommandot i kön returnerade ett fel.",
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Kunde inte ladda senaste sessionsdatan:", error);
+        }
+    };
+
+    useEffect(() => {
+        loadLatestSessionData();
+    }, [deviceId, userId]);
+
+    useEffect(() => {
+        if (showHistory) {
+            fetchDiagnosticHistory();
+        }
+    }, [userId, deviceId, isValidId, showHistory]);
+
     useEffect(() => {
         if (!userId || !socket) return;
 
-        // Se till att socket är ansluten och gå med i användarrummet (om backend kräver det via event)
         if (socket.disconnected) {
             socket.connect();
         }
 
-        // Rummet på backend är byggt som `user:${userId}`
         const roomName = `user:${userId}`;
-        socket.emit("join-room", roomName); // Justera eventnamn om din backend lyssnar på något annat för att joina rum
+        socket.emit("join-room", roomName);
 
         function handleLiveFirmwareQueue(queData) {
-            console.log(
-                "Mottog live-data via WebSocket (device:firmware_que):",
-                queData,
-            );
+            console.log("Mottog live-data via WebSocket:", queData);
 
-            // Säkerställ att inkommande data är för den enhet vi kollar på just nu
             const currentUIId = isValidId ? Number(deviceId.trim()) : deviceId;
             const incomingId = Number(queData?.device_ID);
 
             if (incomingId === currentUIId) {
                 setLiveDeviceData(queData);
-                setIsWaitingForDevice(false); // Avbryt laddningssymbolen när hårdvaran svarat!
+                setIsWaitingForDevice(false);
+
+                if (showHistory) {
+                    fetchDiagnosticHistory();
+                }
 
                 if (queData.command_status === "success") {
                     setNotice({
@@ -208,14 +367,12 @@ export default function DeviceControl() {
             }
         }
 
-        // Starta lyssnaren
         socket.on("device:firmware_que", handleLiveFirmwareQueue);
 
-        // Städa upp när komponenten avmonteras eller om enhets-ID ändras
         return () => {
             socket.off("device:firmware_que", handleLiveFirmwareQueue);
         };
-    }, [userId, deviceId, isValidId]);
+    }, [userId, deviceId, isValidId, showHistory]);
 
     function resetResult() {
         setNotice(null);
@@ -223,6 +380,14 @@ export default function DeviceControl() {
         setTechnicalDetails(null);
         setLiveDeviceData(null);
         setIsWaitingForDevice(false);
+    }
+
+    function toggleHistory() {
+        setShowHistory((prev) => !prev);
+    }
+
+    function toggleExpandHistoryItem(queId) {
+        setExpandedHistoryId((prev) => (prev === queId ? null : queId));
     }
 
     async function runDiagnostic() {
@@ -246,20 +411,9 @@ export default function DeviceControl() {
                 requestBody,
             );
 
-            console.log("Diagnostic queued successfully:", response.data);
-
             setResponseData(response.data);
             setTechnicalDetails(null);
-
-            // Sätt igång vänteläget för hårdvaran (CoAP -> WebSocket-flödet)
             setIsWaitingForDevice(true);
-
-            setNotice({
-                type: "warning",
-                title: "Kommandot köat",
-                message:
-                    "Väntar på att cellular-enheten ska hämta kommandot via CoAP och skicka svar...",
-            });
         } catch (error) {
             console.error("Diagnostic failed:", error);
 
@@ -291,31 +445,49 @@ export default function DeviceControl() {
         return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300";
     }
 
-    function getNoticeIcon(type) {
-        if (type === "success")
-            return <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />;
-        if (type === "warning")
-            return <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" />;
-        return <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />;
+    function renderBatteryIcon(batteryLevel) {
+        const level = Number(batteryLevel);
+        if (level === 0)
+            return (
+                <Battery className="h-5 w-5 text-slate-400 dark:text-slate-500" />
+            );
+        if (level <= 25)
+            return <BatteryLow className="h-5 w-5 text-rose-500" />;
+        if (level <= 75)
+            return <BatteryMedium className="h-5 w-5 text-amber-500" />;
+        return <BatteryFull className="h-5 w-5 text-emerald-500" />;
+    }
+
+    function parseHistoryPayload(payload) {
+        if (!payload) return null;
+        if (typeof payload === "string") {
+            try {
+                return JSON.parse(payload);
+            } catch {
+                return null;
+            }
+        }
+        return payload;
     }
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 text-slate-950 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950 dark:text-white">
             <Navbar />
 
-            <section className="mx-auto max-w-6xl px-6 py-10 xl:ml-72">
+            <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-10 xl:ml-72">
+                {/* HEADLINE-SEKTION */}
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-700 dark:text-blue-300">
+                        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5 text-sm font-bold text-blue-700 dark:text-blue-300">
                             <Cpu className="h-4 w-4" />
                             Device Control
                         </div>
 
-                        <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
+                        <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
                             Firmware diagnostic
                         </h1>
 
-                        <p className="mt-3 max-w-2xl text-base text-slate-600 dark:text-slate-400">
+                        <p className="mt-3 max-w-2xl text-sm sm:text-base text-slate-600 dark:text-slate-400">
                             Skicka ett diagnostic-command till cellular-devicen.
                             Commandet läggs i firmware queue och hämtas sedan av
                             devicen.
@@ -326,14 +498,15 @@ export default function DeviceControl() {
                         type="button"
                         variant="outline"
                         onClick={() => navigate("/dashboard")}
-                        className="h-12 rounded-2xl border-slate-300 bg-white/70 px-6 font-bold hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:bg-blue-950/40 dark:hover:text-blue-300"
+                        className="h-12 w-full sm:w-auto rounded-2xl border-slate-300 bg-white/70 px-6 font-bold hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:bg-blue-950/40 dark:hover:text-blue-300"
                     >
                         <ArrowLeft className="mr-2 h-5 w-5" />
                         Tillbaka
                     </Button>
                 </div>
 
-                <div className="mb-6 grid gap-4 md:grid-cols-3">
+                {/* INFO KORT TOPP */}
+                <div className="mb-6 grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     <Card className="border-slate-200 bg-white/90 shadow-lg dark:border-slate-800 dark:bg-slate-900/90">
                         <CardContent className="flex items-center gap-4 p-5">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-300">
@@ -362,7 +535,7 @@ export default function DeviceControl() {
                         </CardContent>
                     </Card>
 
-                    <Card className="border-slate-200 bg-white/90 shadow-lg dark:border-slate-800 dark:bg-slate-900/90">
+                    <Card className="border-slate-200 bg-white/90 shadow-lg dark:border-slate-800 dark:bg-slate-900/90 sm:col-span-2 lg:col-span-1">
                         <CardContent className="flex items-center gap-4 p-5">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-300">
                                 <ShieldCheck className="h-6 w-6" />
@@ -377,17 +550,19 @@ export default function DeviceControl() {
                     </Card>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+                {/* HUVUDPANELER */}
+                <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 items-start">
+                    {/* VÄNSTER KORT: KÖR DIAGNOSTIC */}
                     <Card className="overflow-hidden border-slate-200 bg-white/90 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
                         <CardHeader className="border-b border-slate-200 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white dark:border-slate-800">
                             <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/15">
                                 <TerminalSquare className="h-9 w-9" />
                             </div>
-                            <div>
-                                <CardTitle className="text-3xl">
+                            <div className="mt-2">
+                                <CardTitle className="text-2xl sm:text-3xl">
                                     Kör diagnostic
                                 </CardTitle>
-                                <CardDescription className="text-base text-blue-100">
+                                <CardDescription className="text-sm sm:text-base text-blue-100">
                                     Skickar diagnostic-command till firmware
                                     queue.
                                 </CardDescription>
@@ -410,34 +585,22 @@ export default function DeviceControl() {
                                 />
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                                <p className="mb-2 text-sm font-bold text-slate-500 dark:text-slate-400">
-                                    Body som skickas
-                                </p>
-                                <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-sm text-white">
-                                    {safeStringify(requestBody)}
-                                </pre>
-                            </div>
-
                             <Button
                                 type="button"
                                 onClick={runDiagnostic}
                                 disabled={isLoading || isWaitingForDevice}
-                                className="h-16 w-full rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25 transition hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
+                                className="h-14 w-full rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25 transition hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
                             >
                                 {isLoading ? (
                                     <>
-                                        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+                                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                                         Köar i databas...
                                     </>
                                 ) : isWaitingForDevice ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                                        Väntar på modemsvar via socket...
-                                    </>
+                                    <>Väntar på modemsvar...</>
                                 ) : (
                                     <>
-                                        <PlayCircle className="mr-2 h-6 w-6" />
+                                        <PlayCircle className="mr-2 h-5 w-5" />
                                         Kör diagnostic
                                     </>
                                 )}
@@ -445,11 +608,15 @@ export default function DeviceControl() {
 
                             {notice && (
                                 <div
-                                    className={`flex items-start gap-3 rounded-2xl border px-4 py-4 ${getNoticeClass(
-                                        notice.type,
-                                    )}`}
+                                    className={`flex items-start gap-3 rounded-2xl border px-4 py-4 ${getNoticeClass(notice.type)}`}
                                 >
-                                    {getNoticeIcon(notice.type)}
+                                    {notice.type === "success" ? (
+                                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+                                    ) : notice.type === "warning" ? (
+                                        <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" />
+                                    ) : (
+                                        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                                    )}
                                     <div>
                                         <p className="font-black">
                                             {notice.title}
@@ -463,11 +630,12 @@ export default function DeviceControl() {
                         </CardContent>
                     </Card>
 
+                    {/* HÖGER KORT: REALTIDSSVAR */}
                     <Card className="border-slate-200 bg-white/90 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-2xl">
                                 <Activity className="h-6 w-6 text-blue-600 dark:text-blue-300" />
-                                Resultat
+                                Aktivt Resultat
                             </CardTitle>
                             <CardDescription>
                                 Här visas bekräftelse från API samt realtidssvar
@@ -482,12 +650,12 @@ export default function DeviceControl() {
                                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-950">
                                     <Activity className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                                     <p className="font-bold text-slate-600 dark:text-slate-400">
-                                        Inget aktivt diagnostic-kommando.
+                                        Inget aktivt diagnostic-kommando igång
+                                        just nu.
                                     </p>
                                 </div>
                             ) : (
                                 <>
-                                    {/* Laddningsindikator för hårdvaran */}
                                     {isWaitingForDevice && (
                                         <div className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-orange-700 dark:text-orange-300 flex items-center gap-3">
                                             <Loader2 className="h-6 w-6 animate-spin shrink-0" />
@@ -495,65 +663,449 @@ export default function DeviceControl() {
                                                 <p className="text-xs font-bold uppercase tracking-wider opacity-75">
                                                     Status
                                                 </p>
-                                                <p className="text-xl font-black">
-                                                    Väntar på hårdvaran...
+                                                <p className="text-lg font-black">
+                                                    Kommandot aktivt i kö
+                                                </p>
+                                                <p className="text-xs opacity-90 mt-0.5">
+                                                    Väntar på att
+                                                    cellular-enheten ska läsa
+                                                    via CoAP och skicka tillbaka
+                                                    svar...
                                                 </p>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Slutgiltig status från hårdvaran via WebSocket */}
-                                    {liveDeviceData && (
-                                        <div
-                                            className={`rounded-2xl border p-4 ${
-                                                liveDeviceData.command_status ===
-                                                "success"
-                                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                                                    : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
-                                            }`}
-                                        >
-                                            <p className="text-xs font-bold uppercase tracking-wider opacity-75">
-                                                Hårdvarustatus
-                                            </p>
-                                            <p className="text-xl font-black">
-                                                {liveDeviceData.command_status ===
-                                                "success"
-                                                    ? "Slutförd"
-                                                    : "Misslyckades"}
-                                            </p>
+                                    {liveDeviceData && parsedPayload && (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50 flex flex-col justify-between">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-2">
+                                                            <Radio className="h-4 w-4" />
+                                                            <span className="text-xs font-bold uppercase tracking-wider">
+                                                                Signalstyrka
+                                                            </span>
+                                                        </div>
+                                                        <p
+                                                            className={`text-2xl font-black tracking-tight ${getRsrpDetails(parsedPayload.rsrp).textColor}`}
+                                                        >
+                                                            {
+                                                                getRsrpDetails(
+                                                                    parsedPayload.rsrp,
+                                                                ).text
+                                                            }
+                                                        </p>
+                                                    </div>
+                                                    <p className="text-sm font-mono font-bold mt-3 text-slate-500 dark:text-slate-400">
+                                                        Mätvärde:{" "}
+                                                        {parsedPayload.rsrp} dBm
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                                                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-1">
+                                                        {renderBatteryIcon(
+                                                            parsedPayload.battery,
+                                                        )}
+                                                        <span className="text-xs font-bold uppercase tracking-wider">
+                                                            Batteristatus
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-2xl font-black">
+                                                        {Number(
+                                                            parsedPayload.battery,
+                                                        ) === 0
+                                                            ? "USB-Drift"
+                                                            : `${parsedPayload.battery}%`}
+                                                    </p>
+                                                    <p className="text-xs text-slate-500 mt-2 font-medium">
+                                                        {Number(
+                                                            parsedPayload.battery,
+                                                        ) === 0
+                                                            ? "Utvecklingskort spänningsmatas via USB"
+                                                            : "Körs på batteribackup"}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                                                        Mobilnät
+                                                    </span>
+                                                    <p className="text-lg font-black truncate">
+                                                        {getOperatorName(
+                                                            parsedPayload.operator,
+                                                        )}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400 font-mono mt-1">
+                                                        MCC/MNC:{" "}
+                                                        {parsedPayload.operator ||
+                                                            "N/A"}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                                                        Aktiv Mast ID
+                                                    </span>
+                                                    <p className="text-lg font-black font-mono truncate">
+                                                        {parsedPayload.cell_id ||
+                                                            "Okänd"}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400 mt-1 font-medium">
+                                                        LTE-M Basstation
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/70 flex gap-3 items-start">
+                                                <HardDrive className="h-5 w-5 text-indigo-500 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                                                        Enhetsmeddelande
+                                                    </p>
+                                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mt-0.5">
+                                                        {liveDeviceData.msg ||
+                                                            "Ingen extra text bifogad."}
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
-                                    {/* JSON-fönster för att visa data */}
-                                    <div className="rounded-2xl bg-slate-950 p-4 text-white">
-                                        <p className="mb-2 text-sm font-bold text-slate-400">
-                                            {liveDeviceData
-                                                ? "Mottagen hårdvarudata (Från WebSocket)"
-                                                : "Kö-bekräftelse (Från API)"}
-                                        </p>
-                                        <pre className="max-h-96 overflow-auto text-sm font-mono">
-                                            {safeStringify(
-                                                liveDeviceData ??
-                                                    responseData ??
-                                                    technicalDetails,
-                                            )}
-                                        </pre>
-                                    </div>
+                                    {liveDeviceData &&
+                                        liveDeviceData.command_status ===
+                                            "failed" && (
+                                            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300 p-4">
+                                                <p className="text-xs font-bold uppercase tracking-wider opacity-75">
+                                                    Hårdvarustatus
+                                                </p>
+                                                <p className="text-xl font-black">
+                                                    Misslyckades
+                                                </p>
+                                                <p className="text-sm mt-1">
+                                                    {liveDeviceData.msg ||
+                                                        "Okänt fel rapporterades från hårdvaran."}
+                                                </p>
+                                            </div>
+                                        )}
                                 </>
                             )}
 
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={resetResult}
-                                className="h-12 w-full rounded-2xl font-bold"
-                            >
-                                <RefreshCcw className="mr-2 h-5 w-5" />
-                                Rensa resultat
-                            </Button>
+                            {/* KNAPPAR UNDER SVARET */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={resetResult}
+                                    className="h-12 rounded-2xl font-bold border-slate-200 dark:border-slate-800 w-full"
+                                >
+                                    <RefreshCcw className="mr-2 h-5 w-5" />
+                                    Rensa aktivt resultat
+                                </Button>
+
+                                <Button
+                                    type="button"
+                                    variant={
+                                        showHistory ? "default" : "secondary"
+                                    }
+                                    onClick={toggleHistory}
+                                    className={`h-12 rounded-2xl font-bold transition-all w-full ${
+                                        showHistory
+                                            ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/15"
+                                            : "bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white"
+                                    }`}
+                                >
+                                    <History className="mr-2 h-5 w-5" />
+                                    {showHistory
+                                        ? "Dölj historik"
+                                        : "Visa historik"}
+                                    {showHistory ? (
+                                        <ChevronUp className="ml-1 h-4 w-4" />
+                                    ) : (
+                                        <ChevronDown className="ml-1 h-4 w-4" />
+                                    )}
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
+
+                {/* BRED HISTORIK-PANEL */}
+                {showHistory && (
+                    <div className="mt-8 animate-in fade-in slide-in-from-top-5 duration-300">
+                        <Card className="border-slate-200 bg-white/90 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 w-full">
+                            <CardHeader className="border-b border-slate-100 dark:border-slate-800/60 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2 text-2xl">
+                                        <History className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                                        Diagnostikhistorik
+                                    </CardTitle>
+                                    <CardDescription className="mt-1">
+                                        Klicka på en rad för att granska sparad
+                                        täckning och enhetsdetaljer.
+                                    </CardDescription>
+                                </div>
+                                <span className="self-start sm:self-center rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                    ID {deviceId}
+                                </span>
+                            </CardHeader>
+
+                            <CardContent className="p-0 max-h-[700px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                                {isLoadingHistory ? (
+                                    <div className="flex flex-col items-center justify-center p-12 text-slate-500">
+                                        <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mb-2" />
+                                        <p className="text-sm font-bold">
+                                            Hämtar historik...
+                                        </p>
+                                    </div>
+                                ) : historyList.length === 0 ? (
+                                    <div className="p-12 text-center text-slate-500">
+                                        <Calendar className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                                        <p className="text-sm font-bold">
+                                            Ingen historik hittades för denna
+                                            enhet.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    historyList.map((item) => {
+                                        const historyPayload =
+                                            parseHistoryPayload(item.payload);
+                                        const isSuccess =
+                                            item.command_status === "success";
+                                        const isExpanded =
+                                            expandedHistoryId === item.que_ID;
+
+                                        return (
+                                            <div
+                                                key={item.que_ID}
+                                                className="flex flex-col"
+                                            >
+                                                {/* KLICKBAR RAD */}
+                                                <div
+                                                    onClick={() =>
+                                                        toggleExpandHistoryItem(
+                                                            item.que_ID,
+                                                        )
+                                                    }
+                                                    className="p-5 sm:p-6 hover:bg-slate-100/70 dark:hover:bg-slate-950/50 transition-colors flex items-center justify-between gap-4 cursor-pointer select-none"
+                                                >
+                                                    <div className="space-y-1.5 flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-black ${
+                                                                    isSuccess
+                                                                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                                                        : "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                                                                }`}
+                                                            >
+                                                                {isSuccess
+                                                                    ? "SUCCESS"
+                                                                    : "FAILED"}
+                                                            </span>
+                                                            <span className="text-xs text-slate-400 font-mono">
+                                                                Kö-ID: #
+                                                                {item.que_ID}
+                                                            </span>
+                                                            <span className="text-xs font-medium text-slate-400">
+                                                                •
+                                                            </span>
+                                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                                {item.data_transport
+                                                                    ? String(
+                                                                          item.data_transport,
+                                                                      ).toUpperCase()
+                                                                    : "CELLULAR"}
+                                                            </span>
+                                                        </div>
+
+                                                        <p className="text-base font-bold text-slate-800 dark:text-slate-200 truncate">
+                                                            {item.msg ||
+                                                                (isSuccess
+                                                                    ? "Diagnostik genomförd"
+                                                                    : "Misslyckades")}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-4 shrink-0">
+                                                        {isSuccess &&
+                                                            historyPayload &&
+                                                            !isExpanded && (
+                                                                <div className="hidden md:flex items-center gap-2">
+                                                                    <div className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                                                        <Radio className="h-3.5 w-3.5 text-blue-500" />
+                                                                        <span>
+                                                                            {
+                                                                                getRsrpDetails(
+                                                                                    historyPayload.rsrp,
+                                                                                )
+                                                                                    .text
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                                                        {renderBatteryIcon(
+                                                                            historyPayload.battery,
+                                                                        )}
+                                                                        <span>
+                                                                            {Number(
+                                                                                historyPayload.battery,
+                                                                            ) ===
+                                                                            0
+                                                                                ? "USB"
+                                                                                : `${historyPayload.battery}%`}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        {isExpanded ? (
+                                                            <ChevronUp className="h-5 w-5 text-slate-400" />
+                                                        ) : (
+                                                            <ChevronDown className="h-5 w-5 text-slate-400" />
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* DETALJERAD EXPANDERAD VY */}
+                                                {isExpanded && (
+                                                    <div className="px-5 pb-6 pt-2 bg-slate-50/50 dark:bg-slate-950/20 border-t border-dashed border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                        {isSuccess &&
+                                                        historyPayload ? (
+                                                            <div className="space-y-4 mt-2">
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                                                    {/* SIGNALSTYRKA */}
+                                                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 flex flex-col justify-between shadow-sm">
+                                                                        <div>
+                                                                            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-1">
+                                                                                <Radio className="h-4 w-4 text-blue-500" />
+                                                                                <span className="text-xs font-bold uppercase tracking-wider">
+                                                                                    Signalstyrka
+                                                                                </span>
+                                                                            </div>
+                                                                            <p
+                                                                                className={`text-xl font-black ${getRsrpDetails(historyPayload.rsrp).textColor}`}
+                                                                            >
+                                                                                {
+                                                                                    getRsrpDetails(
+                                                                                        historyPayload.rsrp,
+                                                                                    )
+                                                                                        .text
+                                                                                }
+                                                                            </p>
+                                                                        </div>
+                                                                        <p className="text-xs font-mono font-bold mt-2 text-slate-400">
+                                                                            Värde:{" "}
+                                                                            {
+                                                                                historyPayload.rsrp
+                                                                            }{" "}
+                                                                            dBm
+                                                                        </p>
+                                                                    </div>
+
+                                                                    {/* BATTERI */}
+                                                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 shadow-sm">
+                                                                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-1">
+                                                                            {renderBatteryIcon(
+                                                                                historyPayload.battery,
+                                                                            )}
+                                                                            <span className="text-xs font-bold uppercase tracking-wider">
+                                                                                Batteristatus
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-xl font-black">
+                                                                            {Number(
+                                                                                historyPayload.battery,
+                                                                            ) ===
+                                                                            0
+                                                                                ? "USB-Drift"
+                                                                                : `${historyPayload.battery}%`}
+                                                                        </p>
+                                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                                            {Number(
+                                                                                historyPayload.battery,
+                                                                            ) ===
+                                                                            0
+                                                                                ? "Spänningsmatas externt"
+                                                                                : "Körs på batteri"}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    {/* MOBILNÄT */}
+                                                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 shadow-sm">
+                                                                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                                                                            Mobilnät
+                                                                        </span>
+                                                                        <p className="text-lg font-black truncate">
+                                                                            {getOperatorName(
+                                                                                historyPayload.operator,
+                                                                            )}
+                                                                        </p>
+                                                                        <p className="text-[11px] text-slate-400 font-mono">
+                                                                            MCC/MNC:{" "}
+                                                                            {historyPayload.operator ||
+                                                                                "N/A"}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    {/* MAST ID */}
+                                                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 shadow-sm">
+                                                                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                                                                            Aktiv
+                                                                            Mast
+                                                                            ID
+                                                                        </span>
+                                                                        <p className="text-lg font-black font-mono truncate">
+                                                                            {historyPayload.cell_id ||
+                                                                                "Okänd"}
+                                                                        </p>
+                                                                        <p className="text-[11px] text-slate-400">
+                                                                            LTE-M
+                                                                            Basstation
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* LOGG / TEXT FRÅN ENHET */}
+                                                                <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 flex gap-2 items-start text-xs">
+                                                                    <HardDrive className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                                                                    <div>
+                                                                        <span className="font-bold text-slate-400">
+                                                                            device
+                                                                            svar:
+                                                                        </span>
+                                                                        <span className="ml-1.5 font-medium text-slate-600 dark:text-slate-300">
+                                                                            {item.msg ||
+                                                                                "Ingen extra text bifogad."}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="mt-2 p-4 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-600 dark:text-red-400">
+                                                                Detta kommando
+                                                                sparades som
+                                                                misslyckat
+                                                                (FAILED) eller
+                                                                saknar giltig
+                                                                JSON-payload i
+                                                                databasen.
+                                                                Felmeddelande:{" "}
+                                                                <strong>
+                                                                    {item.msg ||
+                                                                        "Okänt fel"}
+                                                                </strong>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </section>
         </main>
     );

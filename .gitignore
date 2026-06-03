@@ -25,3 +25,4 @@ logs/
 .vite/
 coverage/.flyway.env
 .DS_Store
+kladd.txt

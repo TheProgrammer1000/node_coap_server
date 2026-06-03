@@ -15,7 +15,6 @@ router.post("/add", async (req, res) => {
         console.log("payload: ", payload);
 
         const response = await add_device_arealocation(
-            payload.user_ID,
             payload.device_ID,
             payload.lon,
             payload.lat,
@@ -40,14 +39,14 @@ router.get("/get/:user_ID", async (req, res) => {
 
         const data = await get_user_arealocations(user_ID);
 
-        if (data.length > 0) {
-            res.json({ success: true, devices: data });
-        } else {
-            res.json({
+        if (!user_ID) {
+            res.status(400).json({
                 success: false,
-                msg: "No userid attach to area locations",
+                msg: "user_ID is required",
             });
         }
+
+        res.status(200).json({ success: true, devices: data });
     } catch (error) {
         console.error("Failed to get area locations", error);
 

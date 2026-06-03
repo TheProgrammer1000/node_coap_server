@@ -89,7 +89,6 @@ export async function add_new_device(
 }
 
 export async function add_device_arealocation(
-    user_ID: number,
     device_ID: number,
     lon: number,
     lat: number,
@@ -97,8 +96,8 @@ export async function add_device_arealocation(
     matchedAddress: string,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL add_device_arealocation(?, ?, ?, ?, ?, ?);",
-        [user_ID, device_ID, lon, lat, circle_radius, matchedAddress],
+        "CALL add_device_arealocation(?, ?, ?, ?, ?);",
+        [device_ID, lon, lat, circle_radius, matchedAddress],
     );
 
     console.log(result);

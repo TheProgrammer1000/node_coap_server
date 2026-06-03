@@ -1226,7 +1226,10 @@ function AlertRow({ alert }) {
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <MiniInfo label="Värde" value={alert.status_value ?? "N/A"} />
+                <MiniInfo
+                    label="Värde i m"
+                    value={alert.status_value ?? "N/A"}
+                />
                 <MiniInfo label="Tid" value={formatDate(alert.created_at)} />
             </div>
         </div>
