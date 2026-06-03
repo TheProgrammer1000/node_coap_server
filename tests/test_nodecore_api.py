@@ -102,7 +102,6 @@ def test_get_arealocation_by_user():
     
 #     response = requests.post(url, json=payload)
 #     assert response.status_code == 200
-    
 #     data = response.json()
 #     # Gör om JSON-objektet till en snyggt formaterad sträng med indrag
 #     pretty_json = json.dumps(data, indent=4, ensure_ascii=False)
