@@ -99,7 +99,6 @@ def test_get_arealocation_by_user():
 #         "circle_radius_m": 200,
 #         "matchedAddress": "Address testing"
 #     }
-    
 #     response = requests.post(url, json=payload)
 #     assert response.status_code == 200
 #     data = response.json()
