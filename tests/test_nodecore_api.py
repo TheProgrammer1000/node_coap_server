@@ -92,7 +92,6 @@ def test_get_arealocation_by_user():
 
 # def test_add_arealocation_by_user():
 #     url = f"{BASE_URL}/device/area-location/add"
-
 #     payload = {
 #         "device_ID": 200001,
 #         "lon": 18.213,
