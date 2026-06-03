@@ -192,6 +192,12 @@ router.get("/google/callback", async (req, res) => {
         const dbUser = await saveGoogleUserToDatabase(googleUser);
         const token = createJwtForDbUser(dbUser);
 
+        console.log("FRONTEND_URL:", FRONTEND_URL);
+
+        console.log(
+            `${FRONTEND_URL}/oauth/callback?user=${dbUser}&token=${token}`,
+        );
+
         return redirectToFrontendWithUser(dbUser, token, res);
     } catch (error) {
         console.error("Google callback failed:", error);
