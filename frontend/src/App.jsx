@@ -19,6 +19,7 @@ import Account from "./pages/Account";
 import DeviceEvents from "./pages/DeviceEvents";
 import DeviceDetails from "./pages/DeviceDetails";
 import DeviceControl from "./pages/DeviceControl";
+import DeviceLifecycle from "./pages/DeviceLifecycle";
 
 export default function App() {
     return (
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="/work-areas" element={<WorkAreas />} />
                 <Route path="/geofence" element={<GeofenceDashboard />} />
                 <Route path="/device-control" element={<DeviceControl />} />
+                <Route path="/device-lifecycle" element={<DeviceLifecycle />} />
 
                 <Route path="/mock-cellular-route" element={<MockCellular />} />
                 <Route path="/motion-live" element={<MotionLive />} />

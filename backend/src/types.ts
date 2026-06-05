@@ -43,3 +43,11 @@ export interface device_event_type {
     data_transport: string;
     firmware_version: string;
 }
+
+export interface device_lifecycle_type {
+    device_ID: number;
+    battery_percent: number;
+    gnss_periodic_timeout: number;
+    gnss_periodic_interval: number;
+    firmware_version: string;
+}

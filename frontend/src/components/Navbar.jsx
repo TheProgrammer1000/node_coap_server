@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
-    Activity,
     AlertCircle,
     Bell,
     Bluetooth,
@@ -23,6 +22,8 @@ import {
     UserCircle2,
     TerminalSquare,
     Cpu,
+    Activity, // <-- Finns redan i din lista
+    RefreshCw, // <-- Lägg till om du vill ha kretslopps-loopen
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
@@ -542,6 +543,13 @@ export default function Navbar() {
                         activePaths: ["/geofence"],
                         label: "Geofence",
                         icon: Radar,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
+                    {
+                        to: "/device-lifecycle",
+                        activePaths: ["/device-lifecycle"],
+                        label: "Device Lifecycle",
+                        icon: Activity,
                         show: selectedIsCellular && deviceGroups.hasCellular,
                     },
                     {

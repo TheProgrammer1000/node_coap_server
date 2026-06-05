@@ -6,6 +6,7 @@ import {
     sendLiveGeofenceAlert,
     sendLiveDeviceStatus,
     sendLiveDeviceFirmwareQue,
+    sendLiveDeviceLifeCycle,
 } from "../api/api_server.js";
 import {
     get_device_arealocation,
@@ -15,11 +16,12 @@ import {
     add_device_state,
     add_device_alert,
     add_device_event,
+    add_device_lifecycle,
     get_device_firmware_command,
     update_device_firmware_que,
 } from "../db/db.js";
 import { checkGeofenceStatus } from "../utils/geofence.js";
-import { device_event_type } from "../types.js";
+import { device_event_type, device_lifecycle_type } from "../types.js";
 
 function getCoapQuery(req: any) {
     const url = new URL(req.url, `coap://${process.env.COAP_HOST_NAME}`);
@@ -361,7 +363,7 @@ export function startCoapServer() {
             });
 
             return;
-        } else if (req.url === "/device/status" && req.method === "POST") {
+        } else if (req.url === "/device/health" && req.method === "POST") {
             let body = "";
 
             req.on("data", (chunk) => {
@@ -573,6 +575,70 @@ export function startCoapServer() {
                     return res.end(`Successfully added device event!`);
                 } catch (err) {
                     console.error("Det uppstod ett fel i backend:", err); // Bra att logga hela felet i din terminal också!
+                    res.code = "5.00";
+                    return res.end(`Server error ${err}`);
+                }
+            });
+        } else if (req.url === "/device/lifecycle" && req.method === "POST") {
+            let body = "";
+
+            req.on("data", (chunk) => {
+                body += chunk.toString();
+            });
+
+            req.on("end", async () => {
+                try {
+                    res.setOption("Content-Format", "text/plain");
+
+                    if (!body) {
+                        res.code = "4.00";
+                        return res.end("Missing request body");
+                    }
+
+                    const sensorData: device_lifecycle_type = JSON.parse(body);
+                    console.log("sensorData: ", sensorData);
+
+                    if (!sensorData?.device_ID) {
+                        console.error("");
+                        res.code = "4.01";
+                        return res.end("Error with device_ID property");
+                    }
+
+                    try {
+                        const db_response = await add_device_lifecycle(
+                            sensorData.device_ID,
+                            sensorData.battery_percent,
+                            sensorData.gnss_periodic_timeout,
+                            sensorData.gnss_periodic_interval,
+                            sensorData.firmware_version,
+                        );
+
+                        console.log("db_response: ", db_response);
+
+                        const [data] = await get_userID_by_deviceID(
+                            sensorData.device_ID,
+                        );
+                        const user_ID = data[0].user_ID;
+
+                        if (!user_ID) {
+                            console.warn(
+                                `No user found for device_ID ${sensorData.device_ID}. Status saved but not sent live.`,
+                            );
+
+                            res.code = "2.04";
+                            return res.end("Device status saved");
+                        }
+
+                        await sendLiveDeviceLifeCycle(user_ID, sensorData);
+
+                        console.log("Live device lifecycle sent:", sensorData);
+
+                        res.code = "2.00";
+                        return res.end(`Successfully got device lifecycle!`);
+                    } catch (error) {
+                        console.error("Failed to call db procedur");
+                    }
+                } catch (err) {
                     res.code = "5.00";
                     return res.end(`Server error ${err}`);
                 }

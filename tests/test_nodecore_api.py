@@ -1,11 +1,26 @@
+import os
 import pytest
 import requests
 import json 
+import mysql.connector # <-- Importera MySQL-drivern
+from db import delete_device_lifecycle
+
+
+from dotenv import load_dotenv # <-- Importera load_dotenv
+# Läs in .env-filen (gör detta i toppen av filen)
+load_dotenv()
 
 # Ändra denna till din lokala eller skarpa URL där din Node.js-backend körs
 
 BASE_URL = "http://localhost:3000/api" 
 
+def get_db_connection():
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME")
+    )
 
 
 # def test_add_device_gnss_data():
@@ -105,7 +120,55 @@ def test_get_arealocation_by_user():
 #     # Gör om JSON-objektet till en snyggt formaterad sträng med indrag
 #     pretty_json = json.dumps(data, indent=4, ensure_ascii=False)
 #     print(pretty_json)
-    
-    
 
-  
+def test_add_device_lifecyle():
+    url = f"{BASE_URL}/device/mockdata/cellular/add/lifecycle"
+    
+    payload = {
+        "device_ID": 200001,
+        "battery_percent": 88,
+        "gnss_periodic_timeout": 120,
+        "gnss_periodic_interval": 15,
+        "firmware_version": '1.0.1'
+    }
+    
+    created_id = None
+    
+    # try:
+    response = requests.post(url, json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    print("\n[DEBUG] Serverns JSON-scar: ", data)
+
+    created_id = data.get("last_lifecycle_ID")
+    assert data['success'] == 1
+    # finally:
+        # if created_id is not None:
+        #     row_deleted = delete_device_lifecycle(data.get("last_lifecycle_ID"))
+        #     print(f"\n[STÄDNING] Raderade exakt rad {created_id}. Antal rader borttagna: {row_deleted}")
+    
+        
+    
+# BASE_URL = "http://localhost:3000/api"     
+def test_get_all_device_lifecyle():
+    url = f"{BASE_URL}/device/lifecycle/get/all/14/200001"
+    response = requests.get(url)
+    assert response.status_code == 200
+
+    data = response.json()
+    print("\n[DEBUG] Serverns JSON-scar: ", data)
+
+    assert data['success'] == 1
+
+   
+
+def test_get_all_deviceID_by_userID():
+    url = f"{BASE_URL}/device/get/all/14"
+    response = requests.get(url)
+    assert response.status_code == 200
+    
+    data = response.json()
+    print("\n[DEBUG] Serverns JSON-scar: ", data)
+
+    assert data['success'] == 1

@@ -1,11 +1,16 @@
 import { response, Router } from "express";
 
 import { sendMockPositions } from "../../../coap/demo_routes.js";
-import { add_device_health, add_device_state } from "../../../db/db.js";
+import {
+    add_device_health,
+    add_device_state,
+    add_device_lifecycle,
+    delete_device_lifecycle,
+} from "../../../db/db.js";
 
 const router = Router();
 
-router.post("/cellular", async (req, res) => {
+router.post("/", async (req, res) => {
     const device_ID = Number(req.body?.device_ID);
     const route = req.body?.route;
     const interval_ms = Number(req.body?.interval_ms ?? 2000);
@@ -49,7 +54,7 @@ router.post("/cellular", async (req, res) => {
     }
 });
 
-router.post("/cellular/add/status", async (req, res) => {
+router.post("/add/status", async (req, res) => {
     const device_ID = Number(req.body?.device_ID);
     const battery_percent = Math.floor(Math.random() * 100) + +1;
     const firmware_version = "1.0.1";
@@ -72,7 +77,7 @@ router.post("/cellular/add/status", async (req, res) => {
     console.log("response: ", response);
 });
 
-router.post("/cellular/add/state", async (req, res) => {
+router.post("/add/state", async (req, res) => {
     const device_ID = Number(req.body?.device_ID);
     const status_type = req.body?.status_type;
     const status_now = req.body?.status_now;
@@ -98,6 +103,45 @@ router.post("/cellular/add/state", async (req, res) => {
         res.status(200).json({ success: true, msg: response });
     } catch (error) {
         res.status(500).json({ success: false, msg: error });
+    }
+
+    console.log("response: ", response);
+});
+
+router.post("/add/lifecycle", async (req, res) => {
+    const device_ID = Number(req.body?.device_ID);
+    const battery_percent = req.body?.battery_percent;
+    const gnss_periodic_timeout = req.body?.gnss_periodic_timeout;
+    const gnss_periodic_interval = req.body?.gnss_periodic_interval;
+    const firmware_version = req.body?.firmware_version;
+
+    if (
+        !device_ID ||
+        !battery_percent ||
+        !gnss_periodic_timeout ||
+        !gnss_periodic_interval ||
+        !firmware_version
+    ) {
+        res.status(400).json({
+            success: false,
+            msg: "Body parameters is requirered",
+        });
+    }
+
+    try {
+        const response = await add_device_lifecycle(
+            device_ID,
+            battery_percent,
+            gnss_periodic_timeout,
+            gnss_periodic_interval,
+            firmware_version,
+        );
+
+        const data = response[0];
+
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ success: false, error });
     }
 
     console.log("response: ", response);

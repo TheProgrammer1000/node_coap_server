@@ -463,6 +463,27 @@ export async function add_device_firmware_que(
     return result[0];
 }
 
+export async function add_device_lifecycle(
+    device_ID: number,
+    battery_percent: number,
+    gnss_periodic_timeout: number,
+    gnss_periodic_interval: number,
+    firmware_version: string,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL add_device_lifecycle(?, ?, ?, ?, ?);",
+        [
+            device_ID,
+            battery_percent,
+            gnss_periodic_timeout,
+            gnss_periodic_interval,
+            firmware_version,
+        ],
+    );
+
+    return result[0];
+}
+
 export async function get_device_firmware_command(device_ID: number) {
     const [result] = await pool.query<RowDataPacket[][]>(
         "CALL get_device_firmware_command(?);",
@@ -493,6 +514,27 @@ export async function get_device_firmware_que_all_done(
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
         "CALL get_device_firmware_que_all_done(?, ?);",
+        [user_ID, device_ID],
+    );
+
+    return result[0];
+}
+
+export async function delete_device_lifecycle(lifecycle_ID: number) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        `DELETE FROM device_lifecycle WHERE lifecycle_ID = ${lifecycle_ID};`,
+        [lifecycle_ID],
+    );
+
+    return result[0];
+}
+
+export async function get_all_device_lifecycle(
+    user_ID: number,
+    device_ID: number,
+) {
+    const [result] = await pool.query<RowDataPacket[][]>(
+        "CALL get_all_device_lifecycle(?, ?);",
         [user_ID, device_ID],
     );
 

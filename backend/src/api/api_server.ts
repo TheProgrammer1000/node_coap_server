@@ -124,6 +124,28 @@ export async function sendLiveDeviceFirmwareQue(
     console.log(`Emitted device:status to ${roomName}`);
 }
 
+export async function sendLiveDeviceLifeCycle(
+    userId: string | number,
+    lifecycle_data: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit live que_data");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("lifecycle_data:", lifecycle_data);
+
+    io.to(roomName).emit("device:lifecycle", lifecycle_data);
+
+    console.log(`Emitted device:status to ${roomName}`);
+}
+
 export async function sendLiveMotionSample(
     userId: string | number,
     sample: unknown,

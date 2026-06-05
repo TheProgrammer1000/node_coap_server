@@ -78,27 +78,6 @@ router.get("/user/:user_ID", async (req, res) => {
     }
 });
 
-router.get("/all/user/:user_ID", async (req, res) => {
-    try {
-        const user_ID = Number(req.params.user_ID);
-
-        const data = await get_all_deviceID_by_userID(user_ID);
-
-        if (data.length > 0) {
-            res.json({ success: true, devices: data });
-        } else {
-            res.json({ success: false, msg: "No userid attach to deviceID" });
-        }
-    } catch (error) {
-        console.error("Failed to get device_ID:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to get device_ID",
-        });
-    }
-});
-
 router.get("/get/user/:user_ID", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
