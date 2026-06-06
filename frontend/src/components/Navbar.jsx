@@ -526,6 +526,13 @@ export default function Navbar() {
                         icon: TerminalSquare,
                         show: deviceGroups.totalCount > 0,
                     },
+                    {
+                        to: "/device-lifecycle",
+                        activePaths: ["/device-lifecycle"],
+                        label: "Device Lifecycle",
+                        icon: Activity,
+                        show: selectedIsCellular && deviceGroups.hasCellular,
+                    },
                 ],
             },
             {
@@ -543,13 +550,6 @@ export default function Navbar() {
                         activePaths: ["/geofence"],
                         label: "Geofence",
                         icon: Radar,
-                        show: selectedIsCellular && deviceGroups.hasCellular,
-                    },
-                    {
-                        to: "/device-lifecycle",
-                        activePaths: ["/device-lifecycle"],
-                        label: "Device Lifecycle",
-                        icon: Activity,
                         show: selectedIsCellular && deviceGroups.hasCellular,
                     },
                     {
