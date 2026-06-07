@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { io } from "socket.io-client";
+import { socket } from "@/lib/socket"; // Importera din delade socket-instans
 import {
     AlertCircle,
     Battery,
@@ -14,6 +14,7 @@ import {
     RefreshCw,
     Server,
     TerminalSquare,
+    ChevronDown,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,7 +105,7 @@ export default function DeviceLifecycle() {
                     setCellularDevices(cellularOnly);
 
                     if (cellularOnly.length > 0) {
-                        setSelectedDeviceId(cellularOnly[0].device_ID);
+                        setSelectedDeviceId(String(cellularOnly[0].device_ID));
                     }
                 }
             } catch (error) {
@@ -170,32 +171,36 @@ export default function DeviceLifecycle() {
         }
     }, [userId, selectedDeviceId]);
 
-    // 3. Socket.IO för live-uppdateringar i realtid
+    // 3. Hantera WebSockets i realtid
     useEffect(() => {
-        if (!userId) return;
+        if (!userId || !socket) return;
 
-        const socket = io({
-            transports: ["websocket"],
-        });
+        if (socket.disconnected) {
+            socket.connect();
+        }
 
-        socket.on("connect", () => {
-            setIsSocketConnected(true);
-            socket.emit("join_room", `user:${userId}`);
-        });
+        setIsSocketConnected(socket.connected);
 
-        socket.on("disconnect", () => {
-            setIsSocketConnected(false);
-        });
+        // Berätta för backend att vi går med i rummet
+        socket.emit("join-user-room", userId);
 
-        socket.on("device:lifecycle", (liveData) => {
+        const handleConnect = () => setIsSocketConnected(true);
+        const handleDisconnect = () => setIsSocketConnected(false);
+
+        function handleLiveLifecycle(liveData) {
+            console.log("Mottog live lifecycle-data via WebSocket:", liveData);
+
             if (!liveData || !liveData.device_ID) return;
 
-            // Om det är den valda enheten som skickar data, lägg till den ÖVERST i listan
-            if (Number(liveData.device_ID) === Number(selectedDeviceId)) {
+            const currentUIId = Number(selectedDeviceId);
+            const incomingId = Number(liveData.device_ID);
+
+            // Kolla om datat som kom tillhör den enhet användaren just nu tittar på
+            if (incomingId === currentUIId) {
                 const newLogEntry = {
                     lifecycle_ID: liveData.lifecycle_ID || Date.now(),
                     device_ID: Number(liveData.device_ID),
-                    battery_percent: liveData.battery_percent ?? 100,
+                    battery_percent: liveData.battery_percent ?? 0,
                     gnss_periodic_timeout:
                         liveData.gnss_periodic_timeout ?? 120,
                     gnss_periodic_interval:
@@ -204,15 +209,24 @@ export default function DeviceLifecycle() {
                     created_at: new Date().toISOString(),
                 };
 
+                // Skjut in den nya mätningen i toppen av arrayen
                 setLifecycleHistory((prevHistory) => [
                     newLogEntry,
                     ...prevHistory,
                 ]);
             }
-        });
+        }
+
+        socket.on("connect", handleConnect);
+        socket.on("disconnect", handleDisconnect);
+        socket.on("device:lifecycle", handleLiveLifecycle);
 
         return () => {
-            socket.disconnect();
+            // Städa upp när komponenten unmountas
+            socket.emit("leave-user-room", userId);
+            socket.off("connect", handleConnect);
+            socket.off("disconnect", handleDisconnect);
+            socket.off("device:lifecycle", handleLiveLifecycle);
         };
     }, [userId, selectedDeviceId]);
 
@@ -323,7 +337,7 @@ export default function DeviceLifecycle() {
                                     ))}
                                 </select>
                                 <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
-                                    <ChevronDownIcon className="h-4 w-4 text-slate-500" />
+                                    <ChevronDown className="h-4 w-4 text-slate-500" />
                                 </div>
                             </div>
                         )}
@@ -422,7 +436,7 @@ export default function DeviceLifecycle() {
                                     </div>
                                 </div>
 
-                                {/* HISTORIKFLÖDE: Nu helt rensad från de fasta parametrarna på varje rad */}
+                                {/* HISTORIKFLÖDE */}
                                 <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                                     {lifecycleHistory.map((log, index) => (
                                         <div
@@ -450,7 +464,7 @@ export default function DeviceLifecycle() {
 
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1">
                                                     <Clock className="h-3.5 w-3.5 text-indigo-500" />
-                                                    <span className="font-semibold">
+                                                    <span className="font-semibold text-xs">
                                                         {formatTimestamp(
                                                             log.created_at,
                                                         )}
@@ -479,25 +493,5 @@ export default function DeviceLifecycle() {
                 </Card>
             </div>
         </section>
-    );
-}
-
-// Inbyggd ikon för select-rutan
-function ChevronDownIcon(props) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="m6 9 6 6 6-6" />
-        </svg>
     );
 }

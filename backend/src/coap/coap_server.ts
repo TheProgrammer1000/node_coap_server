@@ -613,25 +613,45 @@ export function startCoapServer() {
                             sensorData.firmware_version,
                         );
 
-                        console.log("db_response: ", db_response);
+                        console.log("db_response ", db_response);
 
-                        const [data] = await get_userID_by_deviceID(
-                            sensorData.device_ID,
-                        );
-                        const user_ID = data[0].user_ID;
+                        const success = db_response[0].success;
+                        // Hämta ut det riktiga ID:t som databasen precis skapade
+                        const last_lifecycle_ID =
+                            db_response[0].last_lifecycle_ID;
 
-                        if (!user_ID) {
-                            console.warn(
-                                `No user found for device_ID ${sensorData.device_ID}. Status saved but not sent live.`,
+                        if (success != 0) {
+                            const [data] = await get_userID_by_deviceID(
+                                sensorData.device_ID,
                             );
+                            const user_ID = data[0].user_ID;
 
-                            res.code = "2.04";
-                            return res.end("Device status saved");
+                            if (!user_ID) {
+                                console.warn(
+                                    `No user found for device_ID ${sensorData.device_ID}. Status saved but not sent live.`,
+                                );
+
+                                res.code = "2.04";
+                                return res.end("Device status saved");
+                            }
+
+                            // MAPPA IN DET RIKTIGA ID:t HÄR:
+                            const livePayload = {
+                                ...sensorData,
+                                lifecycle_ID: last_lifecycle_ID, // Nu får frontenden rätt Logg-nummer direkt!
+                            };
+
+                            await sendLiveDeviceLifeCycle(user_ID, livePayload);
+
+                            console.log(
+                                "Live device lifecycle sent with real ID:",
+                                livePayload,
+                            );
+                        } else {
+                            console.log(
+                                "Success is 0 do not sendliveDeviceLifecycle to frontend",
+                            );
                         }
-
-                        await sendLiveDeviceLifeCycle(user_ID, sensorData);
-
-                        console.log("Live device lifecycle sent:", sensorData);
 
                         res.code = "2.00";
                         return res.end(`Successfully got device lifecycle!`);

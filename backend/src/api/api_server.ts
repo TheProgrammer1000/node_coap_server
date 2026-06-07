@@ -125,7 +125,7 @@ export async function sendLiveDeviceFirmwareQue(
 }
 
 export async function sendLiveDeviceLifeCycle(
-    userId: string | number,
+    userId: number,
     lifecycle_data: unknown,
 ) {
     if (!io) {
