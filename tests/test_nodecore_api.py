@@ -90,7 +90,7 @@ def test_get_device_firmware_que_all_done():
     # Gör om JSON-objektet till en snyggt formaterad sträng med indrag
     pretty_json = json.dumps(data, indent=4, ensure_ascii=False)
     
-    print(f"\n[DEBUG] Serverns JSON-svar:\n{pretty_json}")
+    # print(f"\n[DEBUG] Serverns JSON-svar:\n{pretty_json}")
 
 def test_get_arealocation_by_user():
     url = f"{BASE_URL}/device/area-location/get/14"
@@ -102,7 +102,7 @@ def test_get_arealocation_by_user():
     
     # Gör om JSON-objektet till en snyggt formaterad sträng med indrag
     pretty_json = json.dumps(data, indent=4, ensure_ascii=False)
-    print(pretty_json)
+    # print(pretty_json)
     
 
 # def test_add_arealocation_by_user():
@@ -134,25 +134,25 @@ def test_add_device_lifecyle():
     
     created_id = None
     
-    # try:
-    response = requests.post(url, json=payload)
-    assert response.status_code == 200
+    try:
+        response = requests.post(url, json=payload)
+        assert response.status_code == 200
 
-    data = response.json()
-    print("\n[DEBUG] Serverns JSON-scar: ", data)
+        data = response.json()
+        # print("\n[DEBUG] Serverns JSON-scar: ", data)
 
-    created_id = data.get("last_lifecycle_ID")
-    assert data['success'] == 1
-    # finally:
-        # if created_id is not None:
-        #     row_deleted = delete_device_lifecycle(data.get("last_lifecycle_ID"))
-        #     print(f"\n[STÄDNING] Raderade exakt rad {created_id}. Antal rader borttagna: {row_deleted}")
+        created_id = data.get("last_lifecycle_ID")
+    # assert data['success'] == 1
+    finally:
+        if created_id is not None:
+            row_deleted = delete_device_lifecycle(data.get("last_lifecycle_ID"))
+            # print(f"\n[STÄDNING] Raderade exakt rad {created_id}. Antal rader borttagna: {row_deleted}")
     
         
     
 # BASE_URL = "http://localhost:3000/api"     
-def test_get_all_device_lifecyle():
-    url = f"{BASE_URL}/device/lifecycle/get/all/14/200001"
+def test_get_device_lifecyle():
+    url = f"{BASE_URL}/device/lifecycle/get/14/200001/3"
     response = requests.get(url)
     assert response.status_code == 200
 
@@ -169,6 +169,7 @@ def test_get_all_deviceID_by_userID():
     assert response.status_code == 200
     
     data = response.json()
-    print("\n[DEBUG] Serverns JSON-scar: ", data)
+    # print("\n[DEBUG] Serverns JSON-scar: ", data)
 
     assert data['success'] == 1
+

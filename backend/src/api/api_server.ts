@@ -102,6 +102,28 @@ export async function sendLiveDeviceStatus(
     console.log(`Emitted device:status to ${roomName}`);
 }
 
+export async function sendLiveDeviceEvent(
+    userId: string | number,
+    event: unknown,
+) {
+    if (!io) {
+        console.warn("Socket.IO server is not ready");
+        return;
+    }
+
+    const roomName = `user:${userId}`;
+    const socketsInRoom = await io.in(roomName).fetchSockets();
+
+    console.log("Trying to emit live device event");
+    console.log("Room:", roomName);
+    console.log("Sockets in room:", socketsInRoom.length);
+    console.log("device event", event);
+
+    io.to(roomName).emit("device:event", event);
+
+    console.log(`Emitted device:event to ${roomName}`);
+}
+
 export async function sendLiveDeviceFirmwareQue(
     userId: string | number,
     que_data: unknown,

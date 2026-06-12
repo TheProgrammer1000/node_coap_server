@@ -7,6 +7,7 @@ import {
     sendLiveDeviceStatus,
     sendLiveDeviceFirmwareQue,
     sendLiveDeviceLifeCycle,
+    sendLiveDeviceEvent,
 } from "../api/api_server.js";
 import {
     get_device_arealocation,
@@ -460,6 +461,15 @@ export function startCoapServer() {
                     const sensorData: device_event_type = JSON.parse(body);
                     console.log("sensorData: ", sensorData);
 
+                    let device_event_payload: device_event_type = {
+                        device_ID: sensorData.device_ID,
+                        event_type: sensorData.event_type,
+                        severity: sensorData.severity,
+                        message: sensorData.message,
+                        data_transport: sensorData.data_transport,
+                        firmware_version: sensorData.firmware_version,
+                    };
+
                     const db_response = await add_device_event(
                         sensorData.device_ID,
                         sensorData.event_type,
@@ -470,6 +480,18 @@ export function startCoapServer() {
                     );
 
                     console.log(db_response);
+
+                    const [data] = await get_userID_by_deviceID(
+                        sensorData.device_ID,
+                    );
+                    const user_ID = data[0].user_ID;
+
+                    await sendLiveDeviceEvent(user_ID, device_event_payload);
+
+                    console.log(
+                        "Live device event sent:",
+                        device_event_payload,
+                    );
 
                     res.code = "2.01";
                     return res.end(`Successfully added device event!`);

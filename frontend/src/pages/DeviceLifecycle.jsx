@@ -128,7 +128,7 @@ export default function DeviceLifecycle() {
             setErrorMessage("");
 
             const response = await axios.get(
-                `/api/device/lifecycle/get/all/${userId}/${deviceId}`,
+                `/api/device/lifecycle/get/${userId}/${deviceId}/101`,
             );
 
             if (response.data && response.data.success) {

@@ -13,7 +13,7 @@ import {
     get_user_devices_with_status,
     get_all_devices_from_userID,
     get_user_device_with_status,
-    get_all_device_lifecycle,
+    get_device_lifecycle,
 } from "../../../db/db.js";
 
 import { device_param, work_area_payload } from "../../../types.js";
@@ -21,10 +21,11 @@ import { checkGeofenceStatus } from "../../../utils/geofence.js";
 
 const router = Router();
 
-router.get("/get/all/:user_ID/:device_ID", async (req, res) => {
+router.get("/get/:user_ID/:device_ID/:limit", async (req, res) => {
     try {
         const user_ID = Number(req.params.user_ID);
         const device_ID = Number(req.params.device_ID);
+        const limit = Number(req.params.limit);
 
         if (!user_ID || !device_ID) {
             console.error("user_ID and device_ID Required");
@@ -34,7 +35,11 @@ router.get("/get/all/:user_ID/:device_ID", async (req, res) => {
             });
         }
 
-        const db_response = await get_all_device_lifecycle(user_ID, device_ID);
+        const db_response = await get_device_lifecycle(
+            user_ID,
+            device_ID,
+            limit,
+        );
         console.log(db_response);
 
         res.status(200).json({ success: true, db_response });

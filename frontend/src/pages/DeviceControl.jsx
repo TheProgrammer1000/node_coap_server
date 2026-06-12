@@ -246,77 +246,6 @@ export default function DeviceControl() {
         }
     };
 
-    // DIREKT SYNCHRONISERING NÄR MAN LANDAR PÅ SIDAN ELLER BYTER ID
-    const loadLatestSessionData = async () => {
-        if (!userId || !isValidId) return;
-        try {
-            const currentUIId = Number(deviceId.trim());
-            const response = await axios.get(
-                `${API_BASE_URL}/api/device/firmware/get/all`,
-                {
-                    params: {
-                        user_ID: userId,
-                        device_ID: currentUIId,
-                    },
-                },
-            );
-
-            if (
-                response.data &&
-                response.data.success &&
-                response.data.data?.length > 0
-            ) {
-                // Sortera så vi garanterat får det absolut nyaste kommandot överst
-                const sortedCommands = [...response.data.data].sort((a, b) => {
-                    const idA = a.que_ID || 0;
-                    const idB = b.que_ID || 0;
-                    return idB - idA;
-                });
-
-                const latestCommand = sortedCommands[0];
-
-                if (latestCommand && latestCommand.command === "diagnostic") {
-                    const status = String(
-                        latestCommand.command_status,
-                    ).toLowerCase();
-                    setResponseData({ restored: true });
-
-                    if (status === "pending" || status === "processing") {
-                        setIsWaitingForDevice(true);
-                        setLiveDeviceData(null);
-                        setNotice(null);
-                    } else if (status === "success") {
-                        setLiveDeviceData(latestCommand);
-                        setIsWaitingForDevice(false);
-                        setNotice({
-                            type: "success",
-                            title: "Senaste resultat laddat",
-                            message:
-                                latestCommand.msg ||
-                                "Hämtade den senaste sparade diagnostic-datan för enheten.",
-                        });
-                    } else if (status === "failed") {
-                        setLiveDeviceData(latestCommand);
-                        setIsWaitingForDevice(false);
-                        setNotice({
-                            type: "error",
-                            title: "Senaste kommandot misslyckades",
-                            message:
-                                latestCommand.msg ||
-                                "Det senaste sparade kommandot i kön returnerade ett fel.",
-                        });
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Kunde inte ladda senaste sessionsdatan:", error);
-        }
-    };
-
-    useEffect(() => {
-        loadLatestSessionData();
-    }, [deviceId, userId]);
-
     useEffect(() => {
         if (showHistory) {
             fetchDiagnosticHistory();
@@ -347,6 +276,7 @@ export default function DeviceControl() {
                     fetchDiagnosticHistory();
                 }
 
+                console.log("queData: ", queData);
                 if (queData.command_status === "success") {
                     setNotice({
                         type: "success",

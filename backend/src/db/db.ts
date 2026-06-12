@@ -529,13 +529,14 @@ export async function delete_device_lifecycle(lifecycle_ID: number) {
     return result[0];
 }
 
-export async function get_all_device_lifecycle(
+export async function get_device_lifecycle(
     user_ID: number,
     device_ID: number,
+    limit: number,
 ) {
     const [result] = await pool.query<RowDataPacket[][]>(
-        "CALL get_all_device_lifecycle(?, ?);",
-        [user_ID, device_ID],
+        "CALL get_device_lifecycle(?, ?, ?);",
+        [user_ID, device_ID, limit],
     );
 
     return result[0];

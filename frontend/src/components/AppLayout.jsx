@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 
 import Navbar from "./Navbar";
 import ThemeSync from "./ThemeSync";
+import Footer from "./Footer"; // <-- 1. IMPORTERA FOOTERN HÄR (justera sökväg om den ligger i en annan mapp)
 import { socket } from "@/lib/socket";
 
 export default function AppLayout() {
@@ -61,8 +62,15 @@ export default function AppLayout() {
 
             <Navbar />
 
-            <main className="min-h-screen xl:pl-72">
-                <Outlet />
+            {/* 2. LÄGG TILL 'flex flex-col' HÄR SÅ ATT FOOTERN KAN TRYCKS NER */}
+            <main className="min-h-screen xl:pl-72 flex flex-col">
+                {/* Denna div expanderar och tar upp allt utrymme som finns kvar */}
+                <div className="flex-grow">
+                    <Outlet />
+                </div>
+
+                {/* 3. PLACERA FOOTERN HÄR */}
+                <Footer />
             </main>
         </div>
     );
