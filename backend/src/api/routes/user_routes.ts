@@ -168,6 +168,52 @@ router.post("/login", async (req, res) => {
     }
 });
 
+
+router.post("/change-password", async (req, res) => {
+     try {
+        const { user_ID, password } = req.body;
+
+        if (!user_ID || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing user_ID or password",
+            });
+        }
+
+        if (String(password).length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 8 characters",
+            });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        await pool.query(
+            `
+            UPDATE user
+            SET password_hash = ?,
+                updated_at = NOW()
+            WHERE user_ID = ?
+            `,
+            [passwordHash, user_ID],
+        );
+
+        return res.json({
+            success: true,
+            message: "password changed successfully",
+        });
+    } catch (error) {
+        console.error("Failed to set password:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to set password",
+        });
+    }
+})
+
+
 router.post("/set-cli-password", async (req, res) => {
     try {
         const { user_ID, password } = req.body;

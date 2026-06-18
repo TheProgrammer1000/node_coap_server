@@ -889,7 +889,7 @@ export default function Navbar() {
                         )}
                     </button>
 
-                    <button
+                    {/* <button
                         type="button"
                         onClick={() => setChatOpen(true)}
                         className="group relative flex h-11 w-full items-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-violet-500/25"
@@ -901,7 +901,7 @@ export default function Navbar() {
                         <div className="absolute right-3 flex items-center gap-1">
                             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                         </div>
-                    </button>
+                    </button> */}
                     <button
                         type="button"
                         onClick={handleLogout}
