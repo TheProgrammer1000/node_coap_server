@@ -26,6 +26,9 @@ import {
     RefreshCw, // <-- Lägg till om du vill ha kretslopps-loopen
 } from "lucide-react";
 
+import { Bot } from "lucide-react"; // Se till att Bot finns i din lucide-importlista
+import AiChatDrawer from "./AiChatDrawer"; // Justera sökvägen så den stämmer
+
 import { socket } from "@/lib/socket";
 import { useAuthStore } from "../store/authStore";
 import logo from "../assets/img/mobil-logo.png";
@@ -309,6 +312,7 @@ export default function Navbar() {
 
     const logout = useAuthStore((state) => state.logout);
 
+    const [chatOpen, setChatOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [liveAlerts, setLiveAlerts] = useState([]);
     const [unreadAlertCount, setUnreadAlertCount] = useState(0);
@@ -887,6 +891,19 @@ export default function Navbar() {
 
                     <button
                         type="button"
+                        onClick={() => setChatOpen(true)}
+                        className="group relative flex h-11 w-full items-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-violet-500/25"
+                    >
+                        <Bot className="h-5 w-5 shrink-0" />
+
+                        <span className="truncate">AI Assistant</span>
+
+                        <div className="absolute right-3 flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        </div>
+                    </button>
+                    <button
+                        type="button"
                         onClick={handleLogout}
                         className="flex h-11 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-slate-700 transition hover:bg-red-50 hover:text-red-700 dark:text-slate-200 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                     >
@@ -1154,6 +1171,10 @@ export default function Navbar() {
                     </aside>
                 </>
             )}
+            <AiChatDrawer
+                isOpen={chatOpen}
+                onClose={() => setChatOpen(false)}
+            />
         </>
     );
 }

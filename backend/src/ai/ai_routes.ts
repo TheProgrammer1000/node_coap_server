@@ -4,7 +4,117 @@ import {
     explainDevicePayloadWithOllama,
 } from "../services/ai/ollama.service.js";
 
+import { agent } from "./agent.js";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
 const router = Router();
+router.post("/agent", async (req, res) => {
+    try {
+        console.log("req.body: ", req.body);
+        const { message, user_ID } = req.body;
+
+        if (!message) {
+            return res.status(400).json({
+                error: "Du måste skicka med ett 'message' i din JSON body.",
+            });
+        }
+
+        // 1. Dina fasta instruktioner till modellen
+        const systemPrompt = `
+        Du är en tyst databas-analytiker och ska svara på frågor och hjälpa användaren med det som frågas.
+        Skriv alltid ren och korrekt svenska, istället för skriva en device skriv 1 device.
+        `;
+
+        // 2. Sammansättningen där du skickar med ALLT i ett och samma meddelande
+        const combinedText = `
+        [CONTEXT: Logged in user_ID = ${user_ID || "unknown"}]
+
+        [INSTRUKTIONER]:
+        ${systemPrompt.trim()}
+
+        [ANVÄNDARENS FRÅGA]:
+        ${message.trim()}
+        `;
+
+        const result = await agent.invoke(
+            {
+                messages: [new HumanMessage(combinedText)],
+            },
+            {
+                configurable: {
+                    thread_id: `user_session_${user_ID || "anon"}`,
+                    current_user_id: user_ID,
+                },
+                recursionLimit: 10,
+            },
+        );
+
+        const reply = result.messages[result.messages.length - 1].content;
+        console.log("reply: ", reply);
+
+        res.json({success: true, data: reply})
+    } catch (err) {
+        console.error("Error in agent route: ", err);
+        res.status(500).send("Ett internt fel uppstod i AI-agenten.");
+    }
+});
+
+// En helt "tyst" route för dashboarden
+router.post("/dashboard", async (req, res) => {
+  try {
+        console.log("req.body: ", req.body);
+        const { user_ID } = req.body;
+
+        if (!user_ID) {
+            return res.status(400).json({
+                error: "Du måste skicka med ett 'user_ID' i din JSON body.",
+            });
+        }
+
+        console.log("Running AI Agent Query for user:", user_ID);
+
+       // Här hårdkodar vi instruktionen inuti backend. Användaren slipper skriva något!
+       const systemPrompt = `
+        SAMMANFATTNING:
+        Du är en tyst databas-analytiker.
+        Kör bara SQL-fråga om användaren vill ha någon information om device annars kör inte ens en SQL-fråga!
+
+        SQL REGLER:
+        Kör en SQL-fråga för att kontrollera om användaren har några enheter med battery_percent under 20 %
+        och ge devicens namn och device_ID i svaret.
+
+        Svara tydligt på vilken device det är!
+
+        REGLER FÖR SVAR:
+        - Om användaren frågor "Ge mig all information om device" då ska du koppla alla tabeller och ge viktigt information utifrån dem.
+        - Om databasen är tom (inga enheter under 20 %): Svara EXAKT bara: "Alla enheter har bra batterinivå just nu."
+        `;
+        
+        const combinedText = `[CONTEXT: Logged in user_ID = ${user_ID}]\n\nQuery: ${systemPrompt}`;
+
+        const result = await agent.invoke(
+            {
+                messages: [new HumanMessage(combinedText)],
+            },
+            {
+                configurable: {
+                    // Genom att lägga till Date.now() blir minnet helt rent varje gång!
+                    thread_id: `dashboard_summary_${user_ID}_${Date.now()}`,
+                    current_user_id: user_ID,
+                },
+                recursionLimit: 10,
+            },
+        );
+
+        const reply = result.messages[result.messages.length - 1].content;
+        console.log("reply: ", reply);
+
+        res.json({success: true, data: reply})
+    } catch (err) {
+        console.error("Error in agent route: ", err);
+        res.status(500).send("Ett internt fel uppstod i AI-agenten.");
+    }
+});
 
 router.post("/explain-alert", async (req, res) => {
     const alertData = req.body;
