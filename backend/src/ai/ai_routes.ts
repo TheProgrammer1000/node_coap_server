@@ -49,8 +49,31 @@ router.post("/agent", async (req, res) => {
             },
         );
 
-        const reply = result.messages[result.messages.length - 1].content;
-        console.log("reply: ", reply);
+        // ✨ SÄKER HÄMTNING AV SVAR ✨
+        // Ibland ligger svaret i sista meddelandet, ibland i näst sista om verktyg kördes.
+        // Vi letar efter det sista AIMessage som faktiskt har textinnehåll:
+        let reply: string = "";
+
+        if (result.messages && result.messages.length > 0) {
+            // Gå baklänges i meddelandena för att hitta AI:s textsträng
+            for (let i = result.messages.length - 1; i >= 0; i--) {
+                const msg = result.messages[i];
+
+                // Kontrollera att det är ett AI-meddelande (inte ToolMessage eller HumanMessage)
+                // Vi kollar både ._getType() och att innehållet är en textsträng
+                if (msg._getType() === "ai" && msg.content && typeof msg.content === "string") {
+                    reply = msg.content;
+                    break;
+                }
+            }
+        }
+
+        // Om vi mot förmodan inte hittar något, sätt ett standardsvar istället för att krascha
+        if (!reply) {
+            reply = "Jag kunde tyvärr inte generera ett svar baserat på datan.";
+        }
+
+        console.log("Skickar slutgiltigt svar till frontend:", reply);
 
         res.json({success: true, data: reply})
     } catch (err) {
