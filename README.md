@@ -1,9 +1,6 @@
 # NodeCore IT - IoT Device Platform
 
 NodeCore IT är en IoT-plattform där uppkopplade devices kan skicka positionsdata, status och rörelsedata till en backend. Informationen visas sedan i en webbplattform med karta, historik, geofence, live-status och BLE motion sessions.
-
-Projektet är utvecklat som examensarbete för utbildningen **Systemutvecklare inbyggda system (IoT)** på Stockholms Tekniska Institut.
-
 ---
 
 ## Syfte
@@ -169,45 +166,3 @@ Det gör det enklare att testa dashboard, karta, historik och 3D playback utan a
 ## Resultat
 
 Resultatet är en fungerande IoT-plattform som visar hela kedjan från device till dashboard.
-
-Projektet visar:
-
-- hur embedded/IoT-data skickas till backend
-- hur data sparas i databas
-- hur data visas i frontend
-- hur live-status och historik kan hanteras
-- hur geofence kan användas för arbetsområden
-- hur BLE motion data kan sparas och spelas upp i 3D
-
----
-
-## Reflektion
-
-Det viktigaste lärandet i projektet har varit att förstå helheten i ett IoT-system. Det räcker inte att bara skicka data från en device. Datan måste också tas emot, sparas, struktureras och visas på ett sätt som skapar värde för användaren.
-
-Projektet har också visat vikten av tydlig uppdelning mellan embedded, backend, databas och frontend. Varje del behöver fungera självständigt, men också passa ihop med resten av systemet.
-
----
-
-## Möjliga förbättringar
-
-Projektet kan vidareutvecklas med:
-
-- sparade offline-alerts i databasen
-- SMS eller e-post vid geofence-alert
-- bättre analys av motion sessions
-- roller och behörigheter för företag
-- fler automatiserade tester
-- Docker för enklare deployment
-
----
-
-## Koppling till kursmålen
-
-Projektet kopplar till kursmålen genom att det använder flera delar från utbildningen:
-
-- Programmering inbyggda system
-- Datakommunikation
-- Programmering i C/C++
-
-Projektet har genomförts från idé till fungerande lösning och innehåller både teknisk implementation, reflektion och möjliga förbättringar.
